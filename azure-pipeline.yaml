@@ -1,0 +1,106 @@
+trigger:
+- main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+resources:
+  repositories:
+    - repository: templates
+      type: git
+      name: PetClinic/petclinic-pipeline-template
+      ref: main
+
+variables:
+  azureServiceConnection: 'Azure-Subscription-Conn'
+  devAppName: 'app-petclinic-dev-<suffix>' 
+  testAppName: 'app-petclinic-prod-<suffix>'
+  prodAppName: 'app-petclinic-testing-<suffix>'
+
+stages:
+# --- STAGE 1: BUILD ---
+- stage: Build
+  displayName: 'Build Stage'
+  jobs:
+  - job: BuildJob
+    steps:
+    - template: build.yaml@templates
+      parameters:
+        jdkVersion: '1.17'
+
+# --- STAGE 2: DEPLOY TO DEV ---
+- stage: DeployDev
+  displayName: 'Deploy to Development'
+  dependsOn: Build
+  condition: succeeded()
+  jobs:
+  - template: deploy.yaml@templates
+    parameters:
+      environmentName: 'dev'
+      azureServiceConnection: '$(azureServiceConnection)'
+      webAppName: '$(devAppName)'
+      packagePath: '$(Pipeline.Workspace)/drop/**/target/*.jar'
+
+# --- MANUAL APPROVAL: DEV -> TESTING ---
+- stage: ApproveTesting
+  displayName: 'Manual Approval - Promote to Testing'
+  dependsOn: DeployDev
+  condition: succeeded()
+  jobs:
+  - job: WaitForApprovalTesting
+    displayName: 'Wait for approval to deploy to Testing'
+    pool: server
+    timeoutInMinutes: 1440   # 24 hours (change if you want)
+    steps:
+    - task: ManualValidation@0
+      timeoutInMinutes: 1440
+      inputs:
+        instructions: |
+          Please validate Dev deployment and approve promotion to Testing.
+        # notifyUsers: |
+        #   user@company.com
+
+# --- STAGE 3: DEPLOY TO TESTING ---
+- stage: DeployTest
+  displayName: 'Deploy to Testing'
+  dependsOn: ApproveTesting
+  condition: succeeded()
+  jobs:
+  - template: deploy.yaml@templates
+    parameters:
+      environmentName: 'testing'
+      azureServiceConnection: '$(azureServiceConnection)'
+      webAppName: '$(testAppName)'
+      packagePath: '$(Pipeline.Workspace)/drop/**/target/*.jar'
+
+# --- MANUAL APPROVAL: TESTING -> PROD ---
+- stage: ApproveProd
+  displayName: 'Manual Approval - Promote to Production'
+  dependsOn: DeployTest
+  condition: succeeded()
+  jobs:
+  - job: WaitForApprovalProd
+    displayName: 'Wait for approval to deploy to Production'
+    pool: server
+    timeoutInMinutes: 1440   # 24 hours
+    steps:
+    - task: ManualValidation@0
+      timeoutInMinutes: 1440
+      inputs:
+        instructions: |
+          Please confirm Testing sign-off is complete and approve Production deployment.
+        # notifyUsers: |
+        #   user@company.com
+
+# --- STAGE 4: DEPLOY TO PROD ---
+- stage: DeployProd
+  displayName: 'Deploy to Production'
+  dependsOn: ApproveProd
+  condition: succeeded()
+  jobs:
+  - template: deploy.yaml@templates
+    parameters:
+      environmentName: 'prod'
+      azureServiceConnection: '$(azureServiceConnection)'
+      webAppName: '$(prodAppName)'
+      packagePath: '$(Pipeline.Workspace)/drop/**/target/*.jar'
