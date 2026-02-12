@@ -1,212 +1,107 @@
-Lab: End-to-End Azure DevOps Pipeline for Spring Petclinic
-==========================================================
+# 🧪 Lab: End-to-End Azure DevOps Pipeline for Spring Petclinic
 
-**Objective:**In this lab, you will manually provision infrastructure, secure the connection between Azure DevOps and Azure, import repositories, and build a "Build Once, Deploy Many" pipeline.
+## 🎯 Objective
 
-**Note on Scripts:**The helper scripts (petclinic-infra.sh, petclinic-service-connection.sh) and the ARM template (petclinic-infra.json) are located in the **spring-petclinic** repository. You will **not** execute these scripts as whole files. Instead, you will execute the specific commands inside them individually to understand each step of the provisioning process.
+In this lab, you will manually provision infrastructure, secure the
+connection between Azure DevOps and Azure, import repositories, and
+build a Build Once, Deploy Many pipeline.
 
-**Prerequisites**
------------------
+## 📌 Note on Scripts
 
-1.  **Azure Subscription:** Owner or User Access Administrator role.
-    
-2.  **Azure DevOps Organization:** With a Project created (e.g., PetClinic).
-    
-3.  **Azure CLI:** Open the **Azure Cloud Shell** (Bash) in the [Azure Portal](https://portal.azure.com).
-    
+The helper scripts (`petclinic-infra.sh`,
+`petclinic-service-connection.sh`) and the ARM template
+(`petclinic-infra.json`) are located in the spring-petclinic repository.
 
-**Step 1: Import Repositories**
--------------------------------
+You will not execute these scripts as full files. Instead, you will run
+the individual commands inside them.
 
-We will start by importing the source code and templates into your Azure DevOps project.
+## ✅ Prerequisites
 
-### **1\. Import the Application**
+-   Azure Subscription (Owner or User Access Administrator)
+-   Azure DevOps Organization
+-   Azure Cloud Shell (Bash)
 
-1.  Navigate to **Azure DevOps** > **Repos**.
-    
-2.  Click the repo dropdown (top center) > **Import repository**.
-    
-3.  **Clone URL:** https://github.com/denisdbell/spring-petclinic
-    
-4.  **Name:** spring-petclinic
-    
-5.  Click **Import**.
-    
+## 🧩 Step 1: Import Repositories
 
-### **2\. Import the Templates**
+### Application Repo
 
-1.  Click the repo dropdown > **Import repository**.
-    
-2.  **Clone URL:** https://github.com/denisdbell/petclinic-pipeline-template
-    
-3.  **Name:** petclinic-pipeline-template
-    
-4.  Click **Import**.
-    
+Clone URL: https://github.com/denisdbell/spring-petclinic\
+Name: spring-petclinic
 
-**Step 2: Create Azure Infrastructure**
----------------------------------------
+### Template Repo
 
-_Reference File: spring-petclinic/petclinic-infra.sh_
+Clone URL: https://github.com/denisdbell/petclinic-pipeline-template\
+Name: petclinic-pipeline-template
 
-We will manually run the commands to provision the dev, testing, and prod environments.**Action:** Copy and paste the following commands into your Azure Cloud Shell one by one.
+## ☁️ Step 2: Create Azure Infrastructure
 
-### **1\. Set Up Variables**
+### Set Location
 
-First, ensure you have the ARM template file available in Cloud Shell. You can upload petclinic-infra.json from the repo or create it. Then, set your location.
+``` bash
+LOC="westus3"
+```
 
-Bash
+### Dev
 
-Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`# Upload or ensure petclinic-infra.json is in your current directory  # Set the target region (e.g., westus3 or eastus2 to avoid quotas)  LOC="westus3"` 
+``` bash
+az group create --name rg-dev --location $LOC
+az deployment group create   --name DeployDev   --resource-group rg-dev   --template-file petclinic-infra.json   --parameters environmentName=dev
+```
 
-### **2\. Provision Development (Dev)**
+### Test
 
-Create the resource group and deploy the App Service + Database.
+``` bash
+az group create --name rg-testing --location $LOC
+az deployment group create   --name DeployTest   --resource-group rg-testing   --template-file petclinic-infra.json   --parameters environmentName=testing
+```
 
-Bash
+### Prod
 
-Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   # Create Resource Group  az group create --name rg-dev --location $LOC  # Deploy Resources  az deployment group create \    --name DeployDev \    --resource-group rg-dev \    --template-file petclinic-infra.json \    --parameters environmentName=dev   `
+``` bash
+az group create --name rg-prod --location $LOC
+az deployment group create   --name DeployProd   --resource-group rg-prod   --template-file petclinic-infra.json   --parameters environmentName=prod
+```
 
-### **3\. Provision Testing (Test)**
+## 🔐 Step 3: Service Connection
 
-Repeat the process for the testing environment.
+Create Azure-Subscription-Conn using automatic service principal.
 
-Bash
+### Assign Roles
 
-Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   # Create Resource Group  az group create --name rg-testing --location $LOC  # Deploy Resources  az deployment group create \    --name DeployTest \    --resource-group rg-testing \    --template-file petclinic-infra.json \    --parameters environmentName=testing   `
+``` bash
+SP_ID="<CLIENT_ID>"
+SUBSCRIPTION_ID=$(az account show --query id -o tsv)
 
-### **4\. Provision Production (Prod)**
+az role assignment create   --assignee $SP_ID   --role "Contributor"   --scope "/subscriptions/$SUBSCRIPTION_ID"
 
-Finally, create the production environment.
+az role assignment create   --assignee $SP_ID   --role "User Access Administrator"   --scope "/subscriptions/$SUBSCRIPTION_ID"
+```
 
-Bash
+## ⚙️ Step 4: Pipeline Structure
 
-Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   # Create Resource Group  az group create --name rg-prod --location $LOC  # Deploy Resources  az deployment group create \    --name DeployProd \    --resource-group rg-prod \    --template-file petclinic-infra.json \    --parameters environmentName=prod   `
+-   build.yaml: Builds and publishes artifacts
+-   deploy.yaml: Deploys to Azure App Service
 
-> **Checkpoint:** Verify in the Azure Portal that rg-dev, rg-testing, and rg-prod exist and contain resources.
+Pipeline Flow: Build → Dev → Approval → Test → Approval → Prod
 
-**Step 3: Configure Service Connection & Roles**
-------------------------------------------------
+## 🚀 Step 5: Run Pipeline
 
-_Reference File: spring-petclinic/petclinic-service-connection.sh_
+Update `azure-pipeline.yaml` variables:
 
-You need to authorize Azure DevOps to deploy to your subscription and assign the correct RBAC roles.
+``` yaml
+variables:
+  azureServiceConnection: 'Azure-Subscription-Conn'
+  devAppName: 'app-petclinic-dev-xxx'
+  testAppName: 'app-petclinic-testing-xxx'
+  prodAppName: 'app-petclinic-prod-xxx'
+```
 
-### **1\. Create the Connection**
+Run from Azure DevOps → Pipelines.
 
-1.  Go to **Azure DevOps** > **Project Settings** > **Service connections**.
-    
-2.  Click **New service connection** > **Azure Resource Manager** > **Service principal (automatic)**.
-    
-3.  Select your **Subscription**.
-    
-4.  Service Connection Name: Azure-Subscription-Conn.
-    
-5.  **Grant access permission to all pipelines**: Checked.
-    
-6.  Click **Save**.
-    
+## ✅ Step 6: Validation
 
-### **2\. Assign Roles (Command Line)**
+Open Production URL → Click Veterinarians → Verify list loads.
 
-The Service Connection created a "Service Principal" (Identity) in Azure. You must now grant that identity permission to manage resources.
+## 🎉 Complete
 
-1.  **Get the Service Principal ID:**
-    
-    *   Go to the Service Connection you just created in Azure DevOps.
-        
-    *   Click **Manage Service Principal** (link opens Azure Portal).
-        
-    *   Copy the **Application (client) ID**.
-        
-2.  **Run these commands in Cloud Shell:**
-    
-
-Bash
-
-Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   # REPLACE with the Client ID you just copied  SP_ID=""   # Get your Subscription ID automatically  SUBSCRIPTION_ID=$(az account show --query id -o tsv)  echo "Using Service Principal: $SP_ID"  # 1. Assign CONTRIBUTOR Role  # Required to create/update App Services and Databases  az role assignment create \    --assignee $SP_ID \    --role "Contributor" \    --scope "/subscriptions/$SUBSCRIPTION_ID"  # 2. Assign USER ACCESS ADMINISTRATOR Role  # Required if the pipeline needs to assign permissions to other resources later  az role assignment create \    --assignee $SP_ID \    --role "User Access Administrator" \    --scope "/subscriptions/$SUBSCRIPTION_ID"   `
-
-**Step 4: Understand the Pipeline Templates**
----------------------------------------------
-
-Before running the pipeline, let's understand how the repositories work together.
-
-### **1\. The Template Repo (petclinic-pipeline-template)**
-
-This repository contains the "Logic" that is shared across environments.
-
-*   **build.yaml**: Compiles the Java code using Maven and publishes the Artifact (drop).
-    
-*   **deploy.yaml**: Downloads the Artifact and deploys it to Azure App Service. It accepts parameters like webAppName and environmentName, making it reusable for Dev, Test, and Prod.
-    
-
-### **2\. The Application Pipeline (spring-petclinic/azure-pipeline.yaml)**
-
-This is the "Orchestrator". It triggers on code changes and calls the templates.
-
-*   **Resources Section**: It links to the petclinic-pipeline-template repo so it can use the YAML files inside it.
-    
-*   **Stages**: It defines the workflow: Build -> DeployDev -> ApproveTesting -> DeployTest, etc.
-    
-
-**Step 5: Configure and Run the Pipeline**
-------------------------------------------
-
-### **1\. Update azure-pipeline.yaml**
-
-You must update the pipeline to use **your** specific resource names.
-
-1.  In Azure DevOps, go to **Repos** > **spring-petclinic**.
-    
-2.  Edit azure-pipeline.yaml.
-    
-3.  YAMLresources: repositories: - repository: templates type: git name: /petclinic-pipeline-template # e.g. PetClinic/petclinic-pipeline-template ref: main
-    
-4.  YAMLvariables: azureServiceConnection: 'Azure-Subscription-Conn' devAppName: 'app-petclinic-dev-' testAppName: 'app-petclinic-testing-' prodAppName: 'app-petclinic-prod-'
-    
-5.  **Commit** the changes.
-    
-
-### **2\. Create and Run**
-
-1.  Go to **Pipelines** > **New Pipeline**.
-    
-2.  Select **Azure Repos Git** > **spring-petclinic**.
-    
-3.  Select **Existing Azure Pipelines YAML file**.
-    
-4.  Path: /azure-pipeline.yaml.
-    
-5.  Click **Run**.
-    
-
-### **3\. Grant Permissions**
-
-The pipeline will pause almost immediately.
-
-*   **Why?** It needs permission to use the Service Connection Azure-Subscription-Conn.
-    
-*   **Action:** Click the "Permission Needed" message on the run screen, then click **Permit** (twice).
-    
-
-### **4\. Manual Approvals**
-
-The pipeline is designed to pause between environments.
-
-*   When **DeployDev** finishes, the pipeline will pause at **ApproveTesting**.
-    
-*   Click **Review** and **Approve** to proceed to the Testing environment.
-    
-*   Repeat this process for Production.
-    
-
-**Step 6: Validation**
-----------------------
-
-Once the pipeline completes DeployProd:
-
-1.  Navigate to the Production App Service URL in your browser.
-    
-2.  Click **"Veterinarians"**.
-    
-3.  Verify that a list of veterinarians loads, confirming the application is successfully connected to the Database.
+You now have a secure multi-stage Azure DevOps pipeline.
