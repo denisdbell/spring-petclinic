@@ -1,174 +1,212 @@
-# Spring PetClinic Sample Application [![Build Status](https://github.com/spring-projects/spring-petclinic/actions/workflows/maven-build.yml/badge.svg)](https://github.com/spring-projects/spring-petclinic/actions/workflows/maven-build.yml)[![Build Status](https://github.com/spring-projects/spring-petclinic/actions/workflows/gradle-build.yml/badge.svg)](https://github.com/spring-projects/spring-petclinic/actions/workflows/gradle-build.yml)
+Lab: End-to-End Azure DevOps Pipeline for Spring Petclinic
+==========================================================
 
-[![Open in Gitpod](https://gitpod.io/button/open-in-gitpod.svg)](https://gitpod.io/#https://github.com/spring-projects/spring-petclinic) [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://github.com/codespaces/new?hide_repo_select=true&ref=main&repo=7517918)
+**Objective:**In this lab, you will manually provision infrastructure, secure the connection between Azure DevOps and Azure, import repositories, and build a "Build Once, Deploy Many" pipeline.
 
-## Understanding the Spring Petclinic application with a few diagrams
+**Note on Scripts:**The helper scripts (petclinic-infra.sh, petclinic-service-connection.sh) and the ARM template (petclinic-infra.json) are located in the **spring-petclinic** repository. You will **not** execute these scripts as whole files. Instead, you will execute the specific commands inside them individually to understand each step of the provisioning process.
 
-See the presentation here:  
-[Spring Petclinic Sample Application (legacy slides)](https://speakerdeck.com/michaelisvy/spring-petclinic-sample-application?slide=20)
+**Prerequisites**
+-----------------
 
-> **Note:** These slides refer to a legacy, pre–Spring Boot version of Petclinic and may not reflect the current Spring Boot–based implementation.  
-> For up-to-date information, please refer to this repository and its documentation.
+1.  **Azure Subscription:** Owner or User Access Administrator role.
+    
+2.  **Azure DevOps Organization:** With a Project created (e.g., PetClinic).
+    
+3.  **Azure CLI:** Open the **Azure Cloud Shell** (Bash) in the [Azure Portal](https://portal.azure.com).
+    
 
+**Step 1: Import Repositories**
+-------------------------------
 
-## Run Petclinic locally
+We will start by importing the source code and templates into your Azure DevOps project.
 
-Spring Petclinic is a [Spring Boot](https://spring.io/guides/gs/spring-boot) application built using [Maven](https://spring.io/guides/gs/maven/) or [Gradle](https://spring.io/guides/gs/gradle/).
-Java 17 or later is required for the build, and the application can run with Java 17 or newer.
+### **1\. Import the Application**
 
-You first need to clone the project locally:
+1.  Navigate to **Azure DevOps** > **Repos**.
+    
+2.  Click the repo dropdown (top center) > **Import repository**.
+    
+3.  **Clone URL:** https://github.com/denisdbell/spring-petclinic
+    
+4.  **Name:** spring-petclinic
+    
+5.  Click **Import**.
+    
 
-```bash
-git clone https://github.com/spring-projects/spring-petclinic.git
-cd spring-petclinic
-```
-If you are using Maven, you can start the application on the command-line as follows:
+### **2\. Import the Templates**
 
-```bash
-./mvnw spring-boot:run
-```
-With Gradle, the command is as follows:
+1.  Click the repo dropdown > **Import repository**.
+    
+2.  **Clone URL:** https://github.com/denisdbell/petclinic-pipeline-template
+    
+3.  **Name:** petclinic-pipeline-template
+    
+4.  Click **Import**.
+    
 
-```bash
-./gradlew bootRun
-```
+**Step 2: Create Azure Infrastructure**
+---------------------------------------
 
-You can then access the Petclinic at <http://localhost:8080/>.
+_Reference File: spring-petclinic/petclinic-infra.sh_
 
-<img width="1042" alt="petclinic-screenshot" src="https://cloud.githubusercontent.com/assets/838318/19727082/2aee6d6c-9b8e-11e6-81fe-e889a5ddfded.png">
+We will manually run the commands to provision the dev, testing, and prod environments.**Action:** Copy and paste the following commands into your Azure Cloud Shell one by one.
 
-You can, of course, run Petclinic in your favorite IDE.
-See below for more details.
+### **1\. Set Up Variables**
 
-## Building a Container
+First, ensure you have the ARM template file available in Cloud Shell. You can upload petclinic-infra.json from the repo or create it. Then, set your location.
 
-There is no `Dockerfile` in this project. You can build a container image (if you have a docker daemon) using the Spring Boot build plugin:
+Bash
 
-```bash
-./mvnw spring-boot:build-image
-```
+Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`# Upload or ensure petclinic-infra.json is in your current directory  # Set the target region (e.g., westus3 or eastus2 to avoid quotas)  LOC="westus3"` 
 
-## In case you find a bug/suggested improvement for Spring Petclinic
+### **2\. Provision Development (Dev)**
 
-Our issue tracker is available [here](https://github.com/spring-projects/spring-petclinic/issues).
+Create the resource group and deploy the App Service + Database.
 
-## Database configuration
+Bash
 
-In its default configuration, Petclinic uses an in-memory database (H2) which
-gets populated at startup with data. The h2 console is exposed at `http://localhost:8080/h2-console`,
-and it is possible to inspect the content of the database using the `jdbc:h2:mem:<uuid>` URL. The UUID is printed at startup to the console.
+Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   # Create Resource Group  az group create --name rg-dev --location $LOC  # Deploy Resources  az deployment group create \    --name DeployDev \    --resource-group rg-dev \    --template-file petclinic-infra.json \    --parameters environmentName=dev   `
 
-A similar setup is provided for MySQL and PostgreSQL if a persistent database configuration is needed. Note that whenever the database type changes, the app needs to run with a different profile: `spring.profiles.active=mysql` for MySQL or `spring.profiles.active=postgres` for PostgreSQL. See the [Spring Boot documentation](https://docs.spring.io/spring-boot/how-to/properties-and-configuration.html#howto.properties-and-configuration.set-active-spring-profiles) for more detail on how to set the active profile.
+### **3\. Provision Testing (Test)**
 
-You can start MySQL or PostgreSQL locally with whatever installer works for your OS or use docker:
+Repeat the process for the testing environment.
 
-```bash
-docker run -e MYSQL_USER=petclinic -e MYSQL_PASSWORD=petclinic -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=petclinic -p 3306:3306 mysql:9.5
-```
+Bash
 
-or
+Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   # Create Resource Group  az group create --name rg-testing --location $LOC  # Deploy Resources  az deployment group create \    --name DeployTest \    --resource-group rg-testing \    --template-file petclinic-infra.json \    --parameters environmentName=testing   `
 
-```bash
-docker run -e POSTGRES_USER=petclinic -e POSTGRES_PASSWORD=petclinic -e POSTGRES_DB=petclinic -p 5432:5432 postgres:18.1
-```
+### **4\. Provision Production (Prod)**
 
-Further documentation is provided for [MySQL](https://github.com/spring-projects/spring-petclinic/blob/main/src/main/resources/db/mysql/petclinic_db_setup_mysql.txt)
-and [PostgreSQL](https://github.com/spring-projects/spring-petclinic/blob/main/src/main/resources/db/postgres/petclinic_db_setup_postgres.txt).
+Finally, create the production environment.
 
-Instead of vanilla `docker` you can also use the provided `docker-compose.yml` file to start the database containers. Each one has a service named after the Spring profile:
+Bash
 
-```bash
-docker compose up mysql
-```
+Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   # Create Resource Group  az group create --name rg-prod --location $LOC  # Deploy Resources  az deployment group create \    --name DeployProd \    --resource-group rg-prod \    --template-file petclinic-infra.json \    --parameters environmentName=prod   `
 
-or
+> **Checkpoint:** Verify in the Azure Portal that rg-dev, rg-testing, and rg-prod exist and contain resources.
 
-```bash
-docker compose up postgres
-```
+**Step 3: Configure Service Connection & Roles**
+------------------------------------------------
 
-## Test Applications
+_Reference File: spring-petclinic/petclinic-service-connection.sh_
 
-At development time we recommend you use the test applications set up as `main()` methods in `PetClinicIntegrationTests` (using the default H2 database and also adding Spring Boot Devtools), `MySqlTestApplication` and `PostgresIntegrationTests`. These are set up so that you can run the apps in your IDE to get fast feedback and also run the same classes as integration tests against the respective database. The MySql integration tests use Testcontainers to start the database in a Docker container, and the Postgres tests use Docker Compose to do the same thing.
+You need to authorize Azure DevOps to deploy to your subscription and assign the correct RBAC roles.
 
-## Compiling the CSS
+### **1\. Create the Connection**
 
-There is a `petclinic.css` in `src/main/resources/static/resources/css`. It was generated from the `petclinic.scss` source, combined with the [Bootstrap](https://getbootstrap.com/) library. If you make changes to the `scss`, or upgrade Bootstrap, you will need to re-compile the CSS resources using the Maven profile "css", i.e. `./mvnw package -P css`. There is no build profile for Gradle to compile the CSS.
+1.  Go to **Azure DevOps** > **Project Settings** > **Service connections**.
+    
+2.  Click **New service connection** > **Azure Resource Manager** > **Service principal (automatic)**.
+    
+3.  Select your **Subscription**.
+    
+4.  Service Connection Name: Azure-Subscription-Conn.
+    
+5.  **Grant access permission to all pipelines**: Checked.
+    
+6.  Click **Save**.
+    
 
-## Working with Petclinic in your IDE
+### **2\. Assign Roles (Command Line)**
 
-### Prerequisites
+The Service Connection created a "Service Principal" (Identity) in Azure. You must now grant that identity permission to manage resources.
 
-The following items should be installed in your system:
+1.  **Get the Service Principal ID:**
+    
+    *   Go to the Service Connection you just created in Azure DevOps.
+        
+    *   Click **Manage Service Principal** (link opens Azure Portal).
+        
+    *   Copy the **Application (client) ID**.
+        
+2.  **Run these commands in Cloud Shell:**
+    
 
-- Java 17 or newer (full JDK, not a JRE)
-- [Git command line tool](https://help.github.com/articles/set-up-git)
-- Your preferred IDE
-  - Eclipse with the m2e plugin. Note: when m2e is available, there is a m2 icon in `Help -> About` dialog. If m2e is
-  not there, follow the installation process [here](https://www.eclipse.org/m2e/)
-  - [Spring Tools Suite](https://spring.io/tools) (STS)
-  - [IntelliJ IDEA](https://www.jetbrains.com/idea/)
-  - [VS Code](https://code.visualstudio.com)
+Bash
 
-### Steps
+Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   # REPLACE with the Client ID you just copied  SP_ID=""   # Get your Subscription ID automatically  SUBSCRIPTION_ID=$(az account show --query id -o tsv)  echo "Using Service Principal: $SP_ID"  # 1. Assign CONTRIBUTOR Role  # Required to create/update App Services and Databases  az role assignment create \    --assignee $SP_ID \    --role "Contributor" \    --scope "/subscriptions/$SUBSCRIPTION_ID"  # 2. Assign USER ACCESS ADMINISTRATOR Role  # Required if the pipeline needs to assign permissions to other resources later  az role assignment create \    --assignee $SP_ID \    --role "User Access Administrator" \    --scope "/subscriptions/$SUBSCRIPTION_ID"   `
 
-1. On the command line run:
+**Step 4: Understand the Pipeline Templates**
+---------------------------------------------
 
-    ```bash
-    git clone https://github.com/spring-projects/spring-petclinic.git
-    ```
+Before running the pipeline, let's understand how the repositories work together.
 
-1. Inside Eclipse or STS:
+### **1\. The Template Repo (petclinic-pipeline-template)**
 
-    Open the project via `File -> Import -> Maven -> Existing Maven project`, then select the root directory of the cloned repo.
+This repository contains the "Logic" that is shared across environments.
 
-    Then either build on the command line `./mvnw generate-resources` or use the Eclipse launcher (right-click on project and `Run As -> Maven install`) to generate the CSS. Run the application's main method by right-clicking on it and choosing `Run As -> Java Application`.
+*   **build.yaml**: Compiles the Java code using Maven and publishes the Artifact (drop).
+    
+*   **deploy.yaml**: Downloads the Artifact and deploys it to Azure App Service. It accepts parameters like webAppName and environmentName, making it reusable for Dev, Test, and Prod.
+    
 
-1. Inside IntelliJ IDEA:
+### **2\. The Application Pipeline (spring-petclinic/azure-pipeline.yaml)**
 
-    In the main menu, choose `File -> Open` and select the Petclinic [pom.xml](pom.xml). Click on the `Open` button.
+This is the "Orchestrator". It triggers on code changes and calls the templates.
 
-    - CSS files are generated from the Maven build. You can build them on the command line `./mvnw generate-resources` or right-click on the `spring-petclinic` project then `Maven -> Generates sources and Update Folders`.
+*   **Resources Section**: It links to the petclinic-pipeline-template repo so it can use the YAML files inside it.
+    
+*   **Stages**: It defines the workflow: Build -> DeployDev -> ApproveTesting -> DeployTest, etc.
+    
 
-    - A run configuration named `PetClinicApplication` should have been created for you if you're using a recent Ultimate version. Otherwise, run the application by right-clicking on the `PetClinicApplication` main class and choosing `Run 'PetClinicApplication'`.
+**Step 5: Configure and Run the Pipeline**
+------------------------------------------
 
-1. Navigate to the Petclinic
+### **1\. Update azure-pipeline.yaml**
 
-    Visit [http://localhost:8080](http://localhost:8080) in your browser.
+You must update the pipeline to use **your** specific resource names.
 
-## Looking for something in particular?
+1.  In Azure DevOps, go to **Repos** > **spring-petclinic**.
+    
+2.  Edit azure-pipeline.yaml.
+    
+3.  YAMLresources: repositories: - repository: templates type: git name: /petclinic-pipeline-template # e.g. PetClinic/petclinic-pipeline-template ref: main
+    
+4.  YAMLvariables: azureServiceConnection: 'Azure-Subscription-Conn' devAppName: 'app-petclinic-dev-' testAppName: 'app-petclinic-testing-' prodAppName: 'app-petclinic-prod-'
+    
+5.  **Commit** the changes.
+    
 
-|Spring Boot Configuration | Class or Java property files  |
-|--------------------------|---|
-|The Main Class | [PetClinicApplication](https://github.com/spring-projects/spring-petclinic/blob/main/src/main/java/org/springframework/samples/petclinic/PetClinicApplication.java) |
-|Properties Files | [application.properties](https://github.com/spring-projects/spring-petclinic/blob/main/src/main/resources) |
-|Caching | [CacheConfiguration](https://github.com/spring-projects/spring-petclinic/blob/main/src/main/java/org/springframework/samples/petclinic/system/CacheConfiguration.java) |
+### **2\. Create and Run**
 
-## Interesting Spring Petclinic branches and forks
+1.  Go to **Pipelines** > **New Pipeline**.
+    
+2.  Select **Azure Repos Git** > **spring-petclinic**.
+    
+3.  Select **Existing Azure Pipelines YAML file**.
+    
+4.  Path: /azure-pipeline.yaml.
+    
+5.  Click **Run**.
+    
 
-The Spring Petclinic "main" branch in the [spring-projects](https://github.com/spring-projects/spring-petclinic)
-GitHub org is the "canonical" implementation based on Spring Boot and Thymeleaf. There are
-[quite a few forks](https://spring-petclinic.github.io/docs/forks.html) in the GitHub org
-[spring-petclinic](https://github.com/spring-petclinic). If you are interested in using a different technology stack to implement the Pet Clinic, please join the community there.
+### **3\. Grant Permissions**
 
-## Interaction with other open-source projects
+The pipeline will pause almost immediately.
 
-One of the best parts about working on the Spring Petclinic application is that we have the opportunity to work in direct contact with many Open Source projects. We found bugs/suggested improvements on various topics such as Spring, Spring Data, Bean Validation and even Eclipse! In many cases, they've been fixed/implemented in just a few days.
-Here is a list of them:
+*   **Why?** It needs permission to use the Service Connection Azure-Subscription-Conn.
+    
+*   **Action:** Click the "Permission Needed" message on the run screen, then click **Permit** (twice).
+    
 
-| Name | Issue |
-|------|-------|
-| Spring JDBC: simplify usage of NamedParameterJdbcTemplate | [SPR-10256](https://github.com/spring-projects/spring-framework/issues/14889) and [SPR-10257](https://github.com/spring-projects/spring-framework/issues/14890) |
-| Bean Validation / Hibernate Validator: simplify Maven dependencies and backward compatibility |[HV-790](https://hibernate.atlassian.net/browse/HV-790) and [HV-792](https://hibernate.atlassian.net/browse/HV-792) |
-| Spring Data: provide more flexibility when working with JPQL queries | [DATAJPA-292](https://github.com/spring-projects/spring-data-jpa/issues/704) |
+### **4\. Manual Approvals**
 
-## Contributing
+The pipeline is designed to pause between environments.
 
-The [issue tracker](https://github.com/spring-projects/spring-petclinic/issues) is the preferred channel for bug reports, feature requests and submitting pull requests.
+*   When **DeployDev** finishes, the pipeline will pause at **ApproveTesting**.
+    
+*   Click **Review** and **Approve** to proceed to the Testing environment.
+    
+*   Repeat this process for Production.
+    
 
-For pull requests, editor preferences are available in the [editor config](.editorconfig) for easy use in common text editors. Read more and download plugins at <https://editorconfig.org>. All commits must include a __Signed-off-by__ trailer at the end of each commit message to indicate that the contributor agrees to the Developer Certificate of Origin.
-For additional details, please refer to the blog post [Hello DCO, Goodbye CLA: Simplifying Contributions to Spring](https://spring.io/blog/2025/01/06/hello-dco-goodbye-cla-simplifying-contributions-to-spring).
+**Step 6: Validation**
+----------------------
 
-## License
+Once the pipeline completes DeployProd:
 
-The Spring PetClinic sample application is released under version 2.0 of the [Apache License](https://www.apache.org/licenses/LICENSE-2.0).
+1.  Navigate to the Production App Service URL in your browser.
+    
+2.  Click **"Veterinarians"**.
+    
+3.  Verify that a list of veterinarians loads, confirming the application is successfully connected to the Database.
