@@ -8,7 +8,7 @@ resources:
   repositories:
     - repository: templates
       type: git
-      name: PetClinic/petclinic-pipeline-template
+      name: <project-name>/petclinic-pipeline-template
       ref: main
 
 variables:
