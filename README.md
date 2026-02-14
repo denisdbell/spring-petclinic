@@ -248,13 +248,3 @@ Once the pipeline completes **DeployProd:**
 3. Verify that a list of veterinarians loads, confirming the application is successfully connected to the Database
 
 ---
-
-## Summary
-
-You have successfully:
-
-✅ Imported repositories into Azure DevOps  
-✅ Provisioned infrastructure across three environments (Dev, Testing, Prod)  
-✅ Configured secure service connections with proper RBAC roles  
-✅ Built and executed a "Build Once, Deploy Many" CI/CD pipeline  
-✅ Validated the deployed application
