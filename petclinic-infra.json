@@ -36,7 +36,8 @@
     "appServicePlanName": "[format('plan-petclinic-{0}', parameters('environmentName'))]",
     "webAppName": "[format('app-petclinic-{0}-{1}', parameters('environmentName'), variables('uniqueSuffix'))]",
     "postgresServerName": "[format('db-petclinic-{0}-{1}', parameters('environmentName'), variables('uniqueSuffix'))]",
-    "databaseName": "petclinic"
+    "databaseName": "petclinic",
+    "acrName": "[format('acrpetclinic{0}{1}', parameters('environmentName'), variables('uniqueSuffix'))]"
   },
   "resources": [
     {
@@ -51,6 +52,18 @@
       "kind": "linux",
       "properties": {
         "reserved": true
+      }
+    },
+    {
+      "type": "Microsoft.ContainerRegistry/registries",
+      "apiVersion": "2023-07-01",
+      "name": "[variables('acrName')]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "Basic"
+      },
+      "properties": {
+        "adminUserEnabled": true
       }
     },
     {
@@ -113,17 +126,30 @@
       "apiVersion": "2022-03-01",
       "name": "[variables('webAppName')]",
       "location": "[parameters('location')]",
-      "kind": "app,linux",
+      "kind": "app,linux,container",
       "dependsOn": [
         "[resourceId('Microsoft.Web/serverfarms', variables('appServicePlanName'))]",
         "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', variables('postgresServerName'))]",
-        "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers/databases', variables('postgresServerName'), variables('databaseName'))]"
+        "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers/databases', variables('postgresServerName'), variables('databaseName'))]",
+        "[resourceId('Microsoft.ContainerRegistry/registries', variables('acrName'))]"
       ],
       "properties": {
         "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('appServicePlanName'))]",
         "siteConfig": {
-          "linuxFxVersion": "JAVA|17-java17",
+          "linuxFxVersion": "DOCKER|mcr.microsoft.com/appsvc/staticsite:latest",
           "appSettings": [
+            {
+              "name": "DOCKER_REGISTRY_SERVER_URL",
+              "value": "[format('https://{0}.azurecr.io', variables('acrName'))]"
+            },
+            {
+              "name": "DOCKER_REGISTRY_SERVER_USERNAME",
+              "value": "[listCredentials(resourceId('Microsoft.ContainerRegistry/registries', variables('acrName')), '2023-07-01').username]"
+            },
+            {
+              "name": "DOCKER_REGISTRY_SERVER_PASSWORD",
+              "value": "[listCredentials(resourceId('Microsoft.ContainerRegistry/registries', variables('acrName')), '2023-07-01').passwords[0].value]"
+            },
             {
               "name": "SPRING_PROFILES_ACTIVE",
               "value": "postgres"
@@ -149,6 +175,10 @@
     "webAppUrl": {
       "type": "string",
       "value": "[format('https://{0}.azurewebsites.net', variables('webAppName'))]"
+    },
+    "acrLoginServer": {
+      "type": "string",
+      "value": "[format('{0}.azurecr.io', variables('acrName'))]"
     }
   }
 }
