@@ -35,7 +35,7 @@ variables:
   sonarProjectKey: '<your-sonar-project-key>'
 
 stages:
-# --- STAGE 1: BUILD ---
+# --- STAGE 1: BUILD (Pushes to DEV ACR) ---
 - stage: Build
   displayName: 'Build Stage'
   jobs:
@@ -44,8 +44,8 @@ stages:
     - template: build.yaml@templates
       parameters:
         jdkVersion: '1.17'
+        devAcrConnection: '$(devAcrConnection)'
         imageRepository: '$(imageRepository)'
-        imageTag: '$(Build.BuildId)'
         sonarServiceConnection: '$(sonarServiceConnection)'
         sonarOrganization: '$(sonarOrganization)'
         sonarProjectKey: '$(sonarProjectKey)'
@@ -61,8 +61,9 @@ stages:
       environmentName: 'dev'
       azureServiceConnection: '$(azureServiceConnection)'
       webAppName: '$(devAppName)'
-      acrServiceConnection: '$(devAcrConnection)'
-      acrLoginServer: '$(devAcrLoginServer)'
+      promoteImage: false # Image is already in Dev ACR
+      targetAcrConnection: '$(devAcrConnection)'
+      targetAcrLoginServer: '$(devAcrLoginServer)'
       imageRepository: '$(imageRepository)'
       imageTag: '$(Build.BuildId)'
 
@@ -80,7 +81,7 @@ stages:
       inputs:
         instructions: 'Please validate Dev deployment and approve promotion to Testing.'
 
-# --- STAGE 3: DEPLOY TO TESTING ---
+# --- STAGE 3: DEPLOY TO TESTING (Promotes Dev ACR -> Test ACR) ---
 - stage: DeployTest
   displayName: 'Deploy to Testing'
   dependsOn: ApproveTesting
@@ -91,8 +92,11 @@ stages:
       environmentName: 'testing'
       azureServiceConnection: '$(azureServiceConnection)'
       webAppName: '$(testAppName)'
-      acrServiceConnection: '$(testAcrConnection)'
-      acrLoginServer: '$(testAcrLoginServer)'
+      promoteImage: true
+      sourceAcrConnection: '$(devAcrConnection)'
+      sourceAcrLoginServer: '$(devAcrLoginServer)'
+      targetAcrConnection: '$(testAcrConnection)'
+      targetAcrLoginServer: '$(testAcrLoginServer)'
       imageRepository: '$(imageRepository)'
       imageTag: '$(Build.BuildId)'
 
@@ -110,7 +114,7 @@ stages:
       inputs:
         instructions: 'Please confirm Testing sign-off is complete and approve Production deployment.'
 
-# --- STAGE 4: DEPLOY TO PROD ---
+# --- STAGE 4: DEPLOY TO PROD (Promotes Test ACR -> Prod ACR) ---
 - stage: DeployProd
   displayName: 'Deploy to Production'
   dependsOn: ApproveProd
@@ -121,7 +125,10 @@ stages:
       environmentName: 'prod'
       azureServiceConnection: '$(azureServiceConnection)'
       webAppName: '$(prodAppName)'
-      acrServiceConnection: '$(prodAcrConnection)'
-      acrLoginServer: '$(prodAcrLoginServer)'
+      promoteImage: true
+      sourceAcrConnection: '$(testAcrConnection)'
+      sourceAcrLoginServer: '$(testAcrLoginServer)'
+      targetAcrConnection: '$(prodAcrConnection)'
+      targetAcrLoginServer: '$(prodAcrLoginServer)'
       imageRepository: '$(imageRepository)'
       imageTag: '$(Build.BuildId)'
