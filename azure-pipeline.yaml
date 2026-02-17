@@ -17,10 +17,17 @@ variables:
   testAppName: 'app-petclinic-prod-<suffix>'
   prodAppName: 'app-petclinic-testing-<suffix>'
 
-  # ACR Variables
-  acrServiceConnection: 'acr-service-connection'
-  acrLoginServer: '<your-registry-name>.azurecr.io'
   imageRepository: 'petclinic-app'
+
+  # Environment-Specific ACR Variables
+  devAcrConnection: 'dev-acr-service-connection'
+  devAcrLoginServer: '<dev-registry>.azurecr.io'
+
+  testAcrConnection: 'test-acr-service-connection'
+  testAcrLoginServer: '<test-registry>.azurecr.io'
+
+  prodAcrConnection: 'prod-acr-service-connection'
+  prodAcrLoginServer: '<prod-registry>.azurecr.io'
 
   # SonarCloud Variables
   sonarServiceConnection: 'sonarcloud-service-connection'
@@ -37,8 +44,8 @@ stages:
     - template: build.yaml@templates
       parameters:
         jdkVersion: '1.17'
-        acrServiceConnection: '$(acrServiceConnection)'
         imageRepository: '$(imageRepository)'
+        imageTag: '$(Build.BuildId)'
         sonarServiceConnection: '$(sonarServiceConnection)'
         sonarOrganization: '$(sonarOrganization)'
         sonarProjectKey: '$(sonarProjectKey)'
@@ -54,7 +61,8 @@ stages:
       environmentName: 'dev'
       azureServiceConnection: '$(azureServiceConnection)'
       webAppName: '$(devAppName)'
-      acrLoginServer: '$(acrLoginServer)'
+      acrServiceConnection: '$(devAcrConnection)'
+      acrLoginServer: '$(devAcrLoginServer)'
       imageRepository: '$(imageRepository)'
       imageTag: '$(Build.BuildId)'
 
@@ -65,15 +73,12 @@ stages:
   condition: succeeded()
   jobs:
   - job: WaitForApprovalTesting
-    displayName: 'Wait for approval to deploy to Testing'
     pool: server
     timeoutInMinutes: 1440
     steps:
     - task: ManualValidation@0
-      timeoutInMinutes: 1440
       inputs:
-        instructions: |
-          Please validate Dev deployment and approve promotion to Testing.
+        instructions: 'Please validate Dev deployment and approve promotion to Testing.'
 
 # --- STAGE 3: DEPLOY TO TESTING ---
 - stage: DeployTest
@@ -86,7 +91,8 @@ stages:
       environmentName: 'testing'
       azureServiceConnection: '$(azureServiceConnection)'
       webAppName: '$(testAppName)'
-      acrLoginServer: '$(acrLoginServer)'
+      acrServiceConnection: '$(testAcrConnection)'
+      acrLoginServer: '$(testAcrLoginServer)'
       imageRepository: '$(imageRepository)'
       imageTag: '$(Build.BuildId)'
 
@@ -97,15 +103,12 @@ stages:
   condition: succeeded()
   jobs:
   - job: WaitForApprovalProd
-    displayName: 'Wait for approval to deploy to Production'
     pool: server
     timeoutInMinutes: 1440
     steps:
     - task: ManualValidation@0
-      timeoutInMinutes: 1440
       inputs:
-        instructions: |
-          Please confirm Testing sign-off is complete and approve Production deployment.
+        instructions: 'Please confirm Testing sign-off is complete and approve Production deployment.'
 
 # --- STAGE 4: DEPLOY TO PROD ---
 - stage: DeployProd
@@ -118,6 +121,7 @@ stages:
       environmentName: 'prod'
       azureServiceConnection: '$(azureServiceConnection)'
       webAppName: '$(prodAppName)'
-      acrLoginServer: '$(acrLoginServer)'
+      acrServiceConnection: '$(prodAcrConnection)'
+      acrLoginServer: '$(prodAcrLoginServer)'
       imageRepository: '$(imageRepository)'
       imageTag: '$(Build.BuildId)'
