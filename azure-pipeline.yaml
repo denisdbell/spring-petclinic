@@ -8,31 +8,31 @@ resources:
   repositories:
     - repository: templates
       type: git
-      name: <project-name>/petclinic-pipeline-template
-      ref: main
+      name: Petclinic/petclinic-pipeline-template
+      ref: master-acr-sonar-cloud
 
 variables:
   azureServiceConnection: 'Azure-Subscription-Conn'
-  devAppName: 'app-petclinic-dev-<suffix>' 
-  testAppName: 'app-petclinic-prod-<suffix>'
-  prodAppName: 'app-petclinic-testing-<suffix>'
+  devAppName: 'app-petclinic-dev-4ebnal' 
+  testAppName: 'app-petclinic-testing-wery5k'
+  prodAppName: 'app-petclinic-prod-x7hl53'
 
   imageRepository: 'petclinic-app'
 
   # Environment-Specific ACR Variables
   devAcrConnection: 'dev-acr-service-connection'
-  devAcrLoginServer: '<dev-registry>.azurecr.io'
+  devAcrLoginServer: 'acrpetclinicdev4ebnal.azurecr.io'
 
   testAcrConnection: 'test-acr-service-connection'
-  testAcrLoginServer: '<test-registry>.azurecr.io'
+  testAcrLoginServer: 'acrpetclinictestingwery5k.azurecr.io'
 
   prodAcrConnection: 'prod-acr-service-connection'
-  prodAcrLoginServer: '<prod-registry>.azurecr.io'
+  prodAcrLoginServer: 'acrpetclinicprodx7hl53.azurecr.io'
 
-  # SonarCloud Variables
-  sonarServiceConnection: 'sonarcloud-service-connection'
-  sonarOrganization: '<your-sonar-org>'
-  sonarProjectKey: '<your-sonar-project-key>'
+  # SonarQube Variables (Replaced SonarCloud)
+  sonarServiceConnection: 'sonarqube-service-connection'
+  sonarProjectKey: 'petclinic'
+  sonarProjectName: 'petclinic'
 
 stages:
 # --- STAGE 1: BUILD (Pushes to DEV ACR) ---
@@ -47,8 +47,8 @@ stages:
         devAcrConnection: '$(devAcrConnection)'
         imageRepository: '$(imageRepository)'
         sonarServiceConnection: '$(sonarServiceConnection)'
-        sonarOrganization: '$(sonarOrganization)'
         sonarProjectKey: '$(sonarProjectKey)'
+        sonarProjectName: '$(sonarProjectName)'
 
 # --- STAGE 2: DEPLOY TO DEV ---
 - stage: DeployDev
