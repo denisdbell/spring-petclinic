@@ -1,5 +1,5 @@
 az deployment sub create \
   --name petclinic-sub-deploy \
   --location westus3 \
-  --template-file main.json \
+  --template-file petclinic-infra.json \
   --parameters region=westus3
