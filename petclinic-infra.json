@@ -17,7 +17,7 @@
     "rgSonar": "rg-sonarqube",
 
     "dbAdminPassword": "Replace-Me-StrongPassword-123!",
-    "sonarUniqueSuffix": "001",
+    "sonarUniqueSuffix": "[substring(uniqueString(subscription().subscriptionId, 'sonarqube'), 0, 6)]",
     "sonarAppName": "[format('sonar-petclinic-{0}', variables('sonarUniqueSuffix'))]"
   },
   "resources": [
@@ -83,7 +83,7 @@
               "apiVersion": "2022-03-01",
               "name": "[variables('appServicePlanName')]",
               "location": "[parameters('region')]",
-              "sku": { "name": "F1", "tier": "Free" },
+              "sku": { "name": "B1", "tier": "Basic" },
               "kind": "linux",
               "properties": { "reserved": true }
             },
@@ -180,8 +180,14 @@
       "properties": {
         "expressionEvaluationOptions": { "scope": "inner" },
         "mode": "Incremental",
-        "template": { "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#", "contentVersion": "1.0.0.0",
-          "parameters": { "environmentName": { "type": "string" }, "region": { "type": "string" }, "dbAdminPassword": { "type": "secureString" } },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {
+            "environmentName": { "type": "string" },
+            "region": { "type": "string" },
+            "dbAdminPassword": { "type": "secureString" }
+          },
           "variables": {
             "uniqueSuffix": "[substring(uniqueString(resourceGroup().id), 0, 6)]",
             "appServicePlanName": "[format('plan-petclinic-{0}', parameters('environmentName'))]",
@@ -196,7 +202,7 @@
               "apiVersion": "2022-03-01",
               "name": "[variables('appServicePlanName')]",
               "location": "[parameters('region')]",
-              "sku": { "name": "F1", "tier": "Free" },
+              "sku": { "name": "B1", "tier": "Basic" },
               "kind": "linux",
               "properties": { "reserved": true }
             },
@@ -293,8 +299,14 @@
       "properties": {
         "expressionEvaluationOptions": { "scope": "inner" },
         "mode": "Incremental",
-        "template": { "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#", "contentVersion": "1.0.0.0",
-          "parameters": { "environmentName": { "type": "string" }, "region": { "type": "string" }, "dbAdminPassword": { "type": "secureString" } },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {
+            "environmentName": { "type": "string" },
+            "region": { "type": "string" },
+            "dbAdminPassword": { "type": "secureString" }
+          },
           "variables": {
             "uniqueSuffix": "[substring(uniqueString(resourceGroup().id), 0, 6)]",
             "appServicePlanName": "[format('plan-petclinic-{0}', parameters('environmentName'))]",
@@ -309,7 +321,7 @@
               "apiVersion": "2022-03-01",
               "name": "[variables('appServicePlanName')]",
               "location": "[parameters('region')]",
-              "sku": { "name": "F1", "tier": "Free" },
+              "sku": { "name": "B1", "tier": "Basic" },
               "kind": "linux",
               "properties": { "reserved": true }
             },
