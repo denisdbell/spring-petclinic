@@ -1,7 +1,7 @@
 ssh-keygen -t rsa -b 4096 -f ~/.ssh/aks_rsa -N ""
 
 az deployment sub create \
-  --name petclinic-aks-deploy \
+  --name petclinic-aks-deploy3 \
   --location westus3 \
   --template-file aks-infra.json \
   --parameters sshRSAPublicKey="$(cat ~/.ssh/aks_rsa.pub)" \
