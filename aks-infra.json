@@ -28,21 +28,22 @@
     "rgTest": "rg-petclinic-testing",
     "rgProd": "rg-petclinic-prod",
     "rgAks": "rg-petclinic-aks",
-    
+
     "uniqueSuffix": "[substring(uniqueString(subscription().subscriptionId, parameters('region')), 0, 6)]",
-    
+
     "aksName": "aks-petclinic",
-    "acrDev": "[format('acrpetclinicdev{0}', variables('uniqueSuffix'))]",
+    "acrDev":  "[format('acrpetclinicdev{0}',  variables('uniqueSuffix'))]",
     "acrTest": "[format('acrpetclinictest{0}', variables('uniqueSuffix'))]",
     "acrProd": "[format('acrpetclinicprod{0}', variables('uniqueSuffix'))]",
-    
-    "dbDev": "[format('db-petclinic-dev-{0}', variables('uniqueSuffix'))]",
+
+    "dbDev":  "[format('db-petclinic-dev-{0}',     variables('uniqueSuffix'))]",
     "dbTest": "[format('db-petclinic-testing-{0}', variables('uniqueSuffix'))]",
-    "dbProd": "[format('db-petclinic-prod-{0}', variables('uniqueSuffix'))]",
-    
+    "dbProd": "[format('db-petclinic-prod-{0}',    variables('uniqueSuffix'))]",
+
     "acrPullRoleId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')]"
   },
   "resources": [
+
     {
       "type": "Microsoft.Resources/resourceGroups",
       "apiVersion": "2021-04-01",
@@ -74,18 +75,24 @@
       "name": "Deploy-AKS",
       "resourceGroup": "[variables('rgAks')]",
       "dependsOn": [
-        "[resourceId('Microsoft.Resources/resourceGroups', variables('rgAks'))]"
+        "[variables('rgAks')]"
       ],
       "properties": {
+        "expressionEvaluationOptions": { "scope": "inner" },
         "mode": "Incremental",
         "template": {
           "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
           "contentVersion": "1.0.0.0",
+          "parameters": {
+            "aksName":        { "type": "string" },
+            "region":         { "type": "string" },
+            "sshRSAPublicKey":{ "type": "string" }
+          },
           "resources": [
             {
               "type": "Microsoft.ContainerService/managedClusters",
               "apiVersion": "2023-08-01",
-              "name": "[variables('aksName')]",
+              "name": "[parameters('aksName')]",
               "location": "[parameters('region')]",
               "identity": {
                 "type": "SystemAssigned"
@@ -96,7 +103,7 @@
                   {
                     "name": "agentpool",
                     "count": 2,
-                    "vmSize": "Standard_DS2_v2",
+                    "vmSize": "Standard_D2s_v4",
                     "osType": "Linux",
                     "mode": "System"
                   }
@@ -116,7 +123,18 @@
                 }
               }
             }
-          ]
+          ],
+          "outputs": {
+            "kubeletObjectId": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.ContainerService/managedClusters', parameters('aksName')), '2023-08-01', 'Full').properties.identityProfile.kubeletidentity.objectId]"
+            }
+          }
+        },
+        "parameters": {
+          "aksName":         { "value": "[variables('aksName')]" },
+          "region":          { "value": "[parameters('region')]" },
+          "sshRSAPublicKey": { "value": "[parameters('sshRSAPublicKey')]" }
         }
       }
     },
@@ -127,19 +145,28 @@
       "name": "Deploy-PetClinic-Dev",
       "resourceGroup": "[variables('rgDev')]",
       "dependsOn": [
-        "[resourceId('Microsoft.Resources/resourceGroups', variables('rgDev'))]",
+        "[variables('rgDev')]",
         "Deploy-AKS"
       ],
       "properties": {
+        "expressionEvaluationOptions": { "scope": "inner" },
         "mode": "Incremental",
         "template": {
           "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
           "contentVersion": "1.0.0.0",
+          "parameters": {
+            "kubeletObjectId": { "type": "string" },
+            "acrName":         { "type": "string" },
+            "dbName":          { "type": "string" },
+            "region":          { "type": "string" },
+            "dbAdminPassword": { "type": "secureString" },
+            "acrPullRoleId":   { "type": "string" }
+          },
           "resources": [
             {
               "type": "Microsoft.ContainerRegistry/registries",
               "apiVersion": "2023-07-01",
-              "name": "[variables('acrDev')]",
+              "name": "[parameters('acrName')]",
               "location": "[parameters('region')]",
               "sku": { "name": "Basic" },
               "properties": { "adminUserEnabled": true }
@@ -147,21 +174,20 @@
             {
               "type": "Microsoft.Authorization/roleAssignments",
               "apiVersion": "2022-04-01",
-              "name": "[guid(variables('rgDev'), variables('acrDev'), variables('aksName'))]",
-              "scope": "[format('Microsoft.ContainerRegistry/registries/{0}', variables('acrDev'))]",
+              "name": "[guid(resourceGroup().name, parameters('acrName'), 'kubelet-acrpull')]",
               "dependsOn": [
-                "[resourceId('Microsoft.ContainerRegistry/registries', variables('acrDev'))]"
+                "[resourceId('Microsoft.ContainerRegistry/registries', parameters('acrName'))]"
               ],
               "properties": {
-                "roleDefinitionId": "[variables('acrPullRoleId')]",
-                "principalId": "[reference(resourceId(variables('rgAks'), 'Microsoft.ContainerService/managedClusters', variables('aksName')), '2023-08-01', 'Full').properties.identityProfile.kubeletidentity.objectId]",
+                "roleDefinitionId": "[parameters('acrPullRoleId')]",
+                "principalId": "[parameters('kubeletObjectId')]",
                 "principalType": "ServicePrincipal"
               }
             },
             {
               "type": "Microsoft.DBforPostgreSQL/flexibleServers",
               "apiVersion": "2022-12-01",
-              "name": "[variables('dbDev')]",
+              "name": "[parameters('dbName')]",
               "location": "[parameters('region')]",
               "sku": { "name": "Standard_B1ms", "tier": "Burstable" },
               "properties": {
@@ -176,19 +202,33 @@
                   "type": "databases",
                   "apiVersion": "2022-12-01",
                   "name": "petclinic",
-                  "dependsOn": [ "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', variables('dbDev'))]" ],
+                  "dependsOn": [
+                    "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', parameters('dbName'))]"
+                  ],
                   "properties": { "charset": "UTF8", "collation": "en_US.utf8" }
                 },
                 {
                   "type": "firewallRules",
                   "apiVersion": "2022-12-01",
                   "name": "AllowAzureServices",
-                  "dependsOn": [ "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', variables('dbDev'))]" ],
+                  "dependsOn": [
+                    "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', parameters('dbName'))]"
+                  ],
                   "properties": { "startIpAddress": "0.0.0.0", "endIpAddress": "0.0.0.0" }
                 }
               ]
             }
           ]
+        },
+        "parameters": {
+          "kubeletObjectId": {
+            "value": "[reference(resourceId(subscription().subscriptionId, variables('rgAks'), 'Microsoft.Resources/deployments', 'Deploy-AKS'), '2021-04-01').outputs.kubeletObjectId.value]"
+          },
+          "acrName":         { "value": "[variables('acrDev')]" },
+          "dbName":          { "value": "[variables('dbDev')]" },
+          "region":          { "value": "[parameters('region')]" },
+          "dbAdminPassword": { "value": "[parameters('dbAdminPassword')]" },
+          "acrPullRoleId":   { "value": "[variables('acrPullRoleId')]" }
         }
       }
     },
@@ -199,19 +239,28 @@
       "name": "Deploy-PetClinic-Test",
       "resourceGroup": "[variables('rgTest')]",
       "dependsOn": [
-        "[resourceId('Microsoft.Resources/resourceGroups', variables('rgTest'))]",
+        "[variables('rgTest')]",
         "Deploy-AKS"
       ],
       "properties": {
+        "expressionEvaluationOptions": { "scope": "inner" },
         "mode": "Incremental",
         "template": {
           "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
           "contentVersion": "1.0.0.0",
+          "parameters": {
+            "kubeletObjectId": { "type": "string" },
+            "acrName":         { "type": "string" },
+            "dbName":          { "type": "string" },
+            "region":          { "type": "string" },
+            "dbAdminPassword": { "type": "secureString" },
+            "acrPullRoleId":   { "type": "string" }
+          },
           "resources": [
             {
               "type": "Microsoft.ContainerRegistry/registries",
               "apiVersion": "2023-07-01",
-              "name": "[variables('acrTest')]",
+              "name": "[parameters('acrName')]",
               "location": "[parameters('region')]",
               "sku": { "name": "Basic" },
               "properties": { "adminUserEnabled": true }
@@ -219,21 +268,20 @@
             {
               "type": "Microsoft.Authorization/roleAssignments",
               "apiVersion": "2022-04-01",
-              "name": "[guid(variables('rgTest'), variables('acrTest'), variables('aksName'))]",
-              "scope": "[format('Microsoft.ContainerRegistry/registries/{0}', variables('acrTest'))]",
+              "name": "[guid(resourceGroup().name, parameters('acrName'), 'kubelet-acrpull')]",
               "dependsOn": [
-                "[resourceId('Microsoft.ContainerRegistry/registries', variables('acrTest'))]"
+                "[resourceId('Microsoft.ContainerRegistry/registries', parameters('acrName'))]"
               ],
               "properties": {
-                "roleDefinitionId": "[variables('acrPullRoleId')]",
-                "principalId": "[reference(resourceId(variables('rgAks'), 'Microsoft.ContainerService/managedClusters', variables('aksName')), '2023-08-01', 'Full').properties.identityProfile.kubeletidentity.objectId]",
+                "roleDefinitionId": "[parameters('acrPullRoleId')]",
+                "principalId": "[parameters('kubeletObjectId')]",
                 "principalType": "ServicePrincipal"
               }
             },
             {
               "type": "Microsoft.DBforPostgreSQL/flexibleServers",
               "apiVersion": "2022-12-01",
-              "name": "[variables('dbTest')]",
+              "name": "[parameters('dbName')]",
               "location": "[parameters('region')]",
               "sku": { "name": "Standard_B1ms", "tier": "Burstable" },
               "properties": {
@@ -247,19 +295,33 @@
                   "type": "databases",
                   "apiVersion": "2022-12-01",
                   "name": "petclinic",
-                  "dependsOn": [ "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', variables('dbTest'))]" ],
+                  "dependsOn": [
+                    "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', parameters('dbName'))]"
+                  ],
                   "properties": { "charset": "UTF8", "collation": "en_US.utf8" }
                 },
                 {
                   "type": "firewallRules",
                   "apiVersion": "2022-12-01",
                   "name": "AllowAzureServices",
-                  "dependsOn": [ "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', variables('dbTest'))]" ],
+                  "dependsOn": [
+                    "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', parameters('dbName'))]"
+                  ],
                   "properties": { "startIpAddress": "0.0.0.0", "endIpAddress": "0.0.0.0" }
                 }
               ]
             }
           ]
+        },
+        "parameters": {
+          "kubeletObjectId": {
+            "value": "[reference(resourceId(subscription().subscriptionId, variables('rgAks'), 'Microsoft.Resources/deployments', 'Deploy-AKS'), '2021-04-01').outputs.kubeletObjectId.value]"
+          },
+          "acrName":         { "value": "[variables('acrTest')]" },
+          "dbName":          { "value": "[variables('dbTest')]" },
+          "region":          { "value": "[parameters('region')]" },
+          "dbAdminPassword": { "value": "[parameters('dbAdminPassword')]" },
+          "acrPullRoleId":   { "value": "[variables('acrPullRoleId')]" }
         }
       }
     },
@@ -270,19 +332,28 @@
       "name": "Deploy-PetClinic-Prod",
       "resourceGroup": "[variables('rgProd')]",
       "dependsOn": [
-        "[resourceId('Microsoft.Resources/resourceGroups', variables('rgProd'))]",
+        "[variables('rgProd')]",
         "Deploy-AKS"
       ],
       "properties": {
+        "expressionEvaluationOptions": { "scope": "inner" },
         "mode": "Incremental",
         "template": {
           "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
           "contentVersion": "1.0.0.0",
+          "parameters": {
+            "kubeletObjectId": { "type": "string" },
+            "acrName":         { "type": "string" },
+            "dbName":          { "type": "string" },
+            "region":          { "type": "string" },
+            "dbAdminPassword": { "type": "secureString" },
+            "acrPullRoleId":   { "type": "string" }
+          },
           "resources": [
             {
               "type": "Microsoft.ContainerRegistry/registries",
               "apiVersion": "2023-07-01",
-              "name": "[variables('acrProd')]",
+              "name": "[parameters('acrName')]",
               "location": "[parameters('region')]",
               "sku": { "name": "Basic" },
               "properties": { "adminUserEnabled": true }
@@ -290,21 +361,20 @@
             {
               "type": "Microsoft.Authorization/roleAssignments",
               "apiVersion": "2022-04-01",
-              "name": "[guid(variables('rgProd'), variables('acrProd'), variables('aksName'))]",
-              "scope": "[format('Microsoft.ContainerRegistry/registries/{0}', variables('acrProd'))]",
+              "name": "[guid(resourceGroup().name, parameters('acrName'), 'kubelet-acrpull')]",
               "dependsOn": [
-                "[resourceId('Microsoft.ContainerRegistry/registries', variables('acrProd'))]"
+                "[resourceId('Microsoft.ContainerRegistry/registries', parameters('acrName'))]"
               ],
               "properties": {
-                "roleDefinitionId": "[variables('acrPullRoleId')]",
-                "principalId": "[reference(resourceId(variables('rgAks'), 'Microsoft.ContainerService/managedClusters', variables('aksName')), '2023-08-01', 'Full').properties.identityProfile.kubeletidentity.objectId]",
+                "roleDefinitionId": "[parameters('acrPullRoleId')]",
+                "principalId": "[parameters('kubeletObjectId')]",
                 "principalType": "ServicePrincipal"
               }
             },
             {
               "type": "Microsoft.DBforPostgreSQL/flexibleServers",
               "apiVersion": "2022-12-01",
-              "name": "[variables('dbProd')]",
+              "name": "[parameters('dbName')]",
               "location": "[parameters('region')]",
               "sku": { "name": "Standard_B1ms", "tier": "Burstable" },
               "properties": {
@@ -318,22 +388,37 @@
                   "type": "databases",
                   "apiVersion": "2022-12-01",
                   "name": "petclinic",
-                  "dependsOn": [ "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', variables('dbProd'))]" ],
+                  "dependsOn": [
+                    "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', parameters('dbName'))]"
+                  ],
                   "properties": { "charset": "UTF8", "collation": "en_US.utf8" }
                 },
                 {
                   "type": "firewallRules",
                   "apiVersion": "2022-12-01",
                   "name": "AllowAzureServices",
-                  "dependsOn": [ "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', variables('dbProd'))]" ],
+                  "dependsOn": [
+                    "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', parameters('dbName'))]"
+                  ],
                   "properties": { "startIpAddress": "0.0.0.0", "endIpAddress": "0.0.0.0" }
                 }
               ]
             }
           ]
+        },
+        "parameters": {
+          "kubeletObjectId": {
+            "value": "[reference(resourceId(subscription().subscriptionId, variables('rgAks'), 'Microsoft.Resources/deployments', 'Deploy-AKS'), '2021-04-01').outputs.kubeletObjectId.value]"
+          },
+          "acrName":         { "value": "[variables('acrProd')]" },
+          "dbName":          { "value": "[variables('dbProd')]" },
+          "region":          { "value": "[parameters('region')]" },
+          "dbAdminPassword": { "value": "[parameters('dbAdminPassword')]" },
+          "acrPullRoleId":   { "value": "[variables('acrPullRoleId')]" }
         }
       }
     }
+
   ],
   "outputs": {
     "aksClusterName": {
