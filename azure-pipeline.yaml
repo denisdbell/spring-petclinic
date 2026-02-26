@@ -12,30 +12,31 @@ resources:
       ref: master-acr-sonar-cloud
 
 variables:
-  azureServiceConnection: 'Azure-Subscription-Conn'
-  devAppName: 'app-petclinic-dev-4ebnal' 
-  testAppName: 'app-petclinic-testing-wery5k'
-  prodAppName: 'app-petclinic-prod-x7hl53'
-
+  # AKS and Common Variables
+  aksServiceConnection: 'aks-service-connection'
   imageRepository: 'petclinic-app'
+  dbAdminPassword: 'Replace-Me-StrongPassword-123!' # Best practice: Move this to a secret pipeline variable
 
-  # Environment-Specific ACR Variables
+  # Dev Environment
   devAcrConnection: 'dev-acr-service-connection'
-  devAcrLoginServer: 'acrpetclinicdev4ebnal.azurecr.io'
+  devAcrLoginServer: 'acrpetclinicdev<YOUR_SUFFIX>.azurecr.io'
+  devDbUrl: 'jdbc:postgresql://db-petclinic-dev-<YOUR_SUFFIX>.postgres.database.azure.com:5432/petclinic'
 
+  # Testing Environment
   testAcrConnection: 'test-acr-service-connection'
-  testAcrLoginServer: 'acrpetclinictestingwery5k.azurecr.io'
+  testAcrLoginServer: 'acrpetclinictest<YOUR_SUFFIX>.azurecr.io'
+  testDbUrl: 'jdbc:postgresql://db-petclinic-testing-<YOUR_SUFFIX>.postgres.database.azure.com:5432/petclinic'
 
+  # Prod Environment
   prodAcrConnection: 'prod-acr-service-connection'
-  prodAcrLoginServer: 'acrpetclinicprodx7hl53.azurecr.io'
+  prodAcrLoginServer: 'acrpetclinicprod<YOUR_SUFFIX>.azurecr.io'
+  prodDbUrl: 'jdbc:postgresql://db-petclinic-prod-<YOUR_SUFFIX>.postgres.database.azure.com:5432/petclinic'
 
-  # SonarQube Variables (Replaced SonarCloud)
   sonarServiceConnection: 'sonarqube-service-connection'
   sonarProjectKey: 'petclinic'
   sonarProjectName: 'petclinic'
 
 stages:
-# --- STAGE 1: BUILD (Pushes to DEV ACR) ---
 - stage: Build
   displayName: 'Build Stage'
   jobs:
@@ -50,7 +51,6 @@ stages:
         sonarProjectKey: '$(sonarProjectKey)'
         sonarProjectName: '$(sonarProjectName)'
 
-# --- STAGE 2: DEPLOY TO DEV ---
 - stage: DeployDev
   displayName: 'Deploy to Development'
   dependsOn: Build
@@ -59,15 +59,16 @@ stages:
   - template: deploy.yaml@templates
     parameters:
       environmentName: 'dev'
-      azureServiceConnection: '$(azureServiceConnection)'
-      webAppName: '$(devAppName)'
-      promoteImage: false # Image is already in Dev ACR
+      namespace: 'dev'
+      aksServiceConnection: '$(aksServiceConnection)'
+      promoteImage: false
       targetAcrConnection: '$(devAcrConnection)'
       targetAcrLoginServer: '$(devAcrLoginServer)'
       imageRepository: '$(imageRepository)'
       imageTag: '$(Build.BuildId)'
+      dbUrl: '$(devDbUrl)'
+      dbPassword: '$(dbAdminPassword)'
 
-# --- MANUAL APPROVAL: DEV -> TESTING ---
 - stage: ApproveTesting
   displayName: 'Manual Approval - Promote to Testing'
   dependsOn: DeployDev
@@ -81,7 +82,6 @@ stages:
       inputs:
         instructions: 'Please validate Dev deployment and approve promotion to Testing.'
 
-# --- STAGE 3: DEPLOY TO TESTING (Promotes Dev ACR -> Test ACR) ---
 - stage: DeployTest
   displayName: 'Deploy to Testing'
   dependsOn: ApproveTesting
@@ -90,8 +90,8 @@ stages:
   - template: deploy.yaml@templates
     parameters:
       environmentName: 'testing'
-      azureServiceConnection: '$(azureServiceConnection)'
-      webAppName: '$(testAppName)'
+      namespace: 'testing'
+      aksServiceConnection: '$(aksServiceConnection)'
       promoteImage: true
       sourceAcrConnection: '$(devAcrConnection)'
       sourceAcrLoginServer: '$(devAcrLoginServer)'
@@ -99,8 +99,9 @@ stages:
       targetAcrLoginServer: '$(testAcrLoginServer)'
       imageRepository: '$(imageRepository)'
       imageTag: '$(Build.BuildId)'
+      dbUrl: '$(testDbUrl)'
+      dbPassword: '$(dbAdminPassword)'
 
-# --- MANUAL APPROVAL: TESTING -> PROD ---
 - stage: ApproveProd
   displayName: 'Manual Approval - Promote to Production'
   dependsOn: DeployTest
@@ -114,7 +115,6 @@ stages:
       inputs:
         instructions: 'Please confirm Testing sign-off is complete and approve Production deployment.'
 
-# --- STAGE 4: DEPLOY TO PROD (Promotes Test ACR -> Prod ACR) ---
 - stage: DeployProd
   displayName: 'Deploy to Production'
   dependsOn: ApproveProd
@@ -123,8 +123,8 @@ stages:
   - template: deploy.yaml@templates
     parameters:
       environmentName: 'prod'
-      azureServiceConnection: '$(azureServiceConnection)'
-      webAppName: '$(prodAppName)'
+      namespace: 'prod'
+      aksServiceConnection: '$(aksServiceConnection)'
       promoteImage: true
       sourceAcrConnection: '$(testAcrConnection)'
       sourceAcrLoginServer: '$(testAcrLoginServer)'
@@ -132,3 +132,5 @@ stages:
       targetAcrLoginServer: '$(prodAcrLoginServer)'
       imageRepository: '$(imageRepository)'
       imageTag: '$(Build.BuildId)'
+      dbUrl: '$(prodDbUrl)'
+      dbPassword: '$(dbAdminPassword)'
