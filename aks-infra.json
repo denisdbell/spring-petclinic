@@ -1,0 +1,348 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "region": {
+      "type": "string",
+      "defaultValue": "westus3",
+      "metadata": {
+        "description": "Region for all resources."
+      }
+    },
+    "dbAdminPassword": {
+      "type": "secureString",
+      "defaultValue": "Replace-Me-StrongPassword-123!",
+      "metadata": {
+        "description": "Administrator password for PostgreSQL servers."
+      }
+    },
+    "sshRSAPublicKey": {
+      "type": "string",
+      "metadata": {
+        "description": "SSH RSA public key for the AKS nodes (required for ARM deployment)."
+      }
+    }
+  },
+  "variables": {
+    "rgDev": "rg-petclinic-dev",
+    "rgTest": "rg-petclinic-testing",
+    "rgProd": "rg-petclinic-prod",
+    "rgAks": "rg-petclinic-aks",
+    
+    "uniqueSuffix": "[substring(uniqueString(subscription().subscriptionId, parameters('region')), 0, 6)]",
+    
+    "aksName": "aks-petclinic",
+    "acrDev": "[format('acrpetclinicdev{0}', variables('uniqueSuffix'))]",
+    "acrTest": "[format('acrpetclinictest{0}', variables('uniqueSuffix'))]",
+    "acrProd": "[format('acrpetclinicprod{0}', variables('uniqueSuffix'))]",
+    
+    "dbDev": "[format('db-petclinic-dev-{0}', variables('uniqueSuffix'))]",
+    "dbTest": "[format('db-petclinic-testing-{0}', variables('uniqueSuffix'))]",
+    "dbProd": "[format('db-petclinic-prod-{0}', variables('uniqueSuffix'))]",
+    
+    "acrPullRoleId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Resources/resourceGroups",
+      "apiVersion": "2021-04-01",
+      "name": "[variables('rgDev')]",
+      "location": "[parameters('region')]"
+    },
+    {
+      "type": "Microsoft.Resources/resourceGroups",
+      "apiVersion": "2021-04-01",
+      "name": "[variables('rgTest')]",
+      "location": "[parameters('region')]"
+    },
+    {
+      "type": "Microsoft.Resources/resourceGroups",
+      "apiVersion": "2021-04-01",
+      "name": "[variables('rgProd')]",
+      "location": "[parameters('region')]"
+    },
+    {
+      "type": "Microsoft.Resources/resourceGroups",
+      "apiVersion": "2021-04-01",
+      "name": "[variables('rgAks')]",
+      "location": "[parameters('region')]"
+    },
+
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2021-04-01",
+      "name": "Deploy-AKS",
+      "resourceGroup": "[variables('rgAks')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/resourceGroups', variables('rgAks'))]"
+      ],
+      "properties": {
+        "mode": "Incremental",
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "resources": [
+            {
+              "type": "Microsoft.ContainerService/managedClusters",
+              "apiVersion": "2023-08-01",
+              "name": "[variables('aksName')]",
+              "location": "[parameters('region')]",
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "properties": {
+                "dnsPrefix": "petclinic",
+                "agentPoolProfiles": [
+                  {
+                    "name": "agentpool",
+                    "count": 2,
+                    "vmSize": "Standard_DS2_v2",
+                    "osType": "Linux",
+                    "mode": "System"
+                  }
+                ],
+                "linuxProfile": {
+                  "adminUsername": "azureuser",
+                  "ssh": {
+                    "publicKeys": [
+                      {
+                        "keyData": "[parameters('sshRSAPublicKey')]"
+                      }
+                    ]
+                  }
+                },
+                "networkProfile": {
+                  "networkPlugin": "kubenet"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2021-04-01",
+      "name": "Deploy-PetClinic-Dev",
+      "resourceGroup": "[variables('rgDev')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/resourceGroups', variables('rgDev'))]",
+        "Deploy-AKS"
+      ],
+      "properties": {
+        "mode": "Incremental",
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "resources": [
+            {
+              "type": "Microsoft.ContainerRegistry/registries",
+              "apiVersion": "2023-07-01",
+              "name": "[variables('acrDev')]",
+              "location": "[parameters('region')]",
+              "sku": { "name": "Basic" },
+              "properties": { "adminUserEnabled": true }
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "name": "[guid(variables('rgDev'), variables('acrDev'), variables('aksName'))]",
+              "scope": "[format('Microsoft.ContainerRegistry/registries/{0}', variables('acrDev'))]",
+              "dependsOn": [
+                "[resourceId('Microsoft.ContainerRegistry/registries', variables('acrDev'))]"
+              ],
+              "properties": {
+                "roleDefinitionId": "[variables('acrPullRoleId')]",
+                "principalId": "[reference(resourceId(variables('rgAks'), 'Microsoft.ContainerService/managedClusters', variables('aksName')), '2023-08-01', 'Full').properties.identityProfile.kubeletidentity.objectId]",
+                "principalType": "ServicePrincipal"
+              }
+            },
+            {
+              "type": "Microsoft.DBforPostgreSQL/flexibleServers",
+              "apiVersion": "2022-12-01",
+              "name": "[variables('dbDev')]",
+              "location": "[parameters('region')]",
+              "sku": { "name": "Standard_B1ms", "tier": "Burstable" },
+              "properties": {
+                "administratorLogin": "petclinic_admin",
+                "administratorLoginPassword": "[parameters('dbAdminPassword')]",
+                "version": "13",
+                "storage": { "storageSizeGB": 32 },
+                "network": { "delegatedSubnetResourceId": null, "privateDnsZoneArmResourceId": null }
+              },
+              "resources": [
+                {
+                  "type": "databases",
+                  "apiVersion": "2022-12-01",
+                  "name": "petclinic",
+                  "dependsOn": [ "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', variables('dbDev'))]" ],
+                  "properties": { "charset": "UTF8", "collation": "en_US.utf8" }
+                },
+                {
+                  "type": "firewallRules",
+                  "apiVersion": "2022-12-01",
+                  "name": "AllowAzureServices",
+                  "dependsOn": [ "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', variables('dbDev'))]" ],
+                  "properties": { "startIpAddress": "0.0.0.0", "endIpAddress": "0.0.0.0" }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2021-04-01",
+      "name": "Deploy-PetClinic-Test",
+      "resourceGroup": "[variables('rgTest')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/resourceGroups', variables('rgTest'))]",
+        "Deploy-AKS"
+      ],
+      "properties": {
+        "mode": "Incremental",
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "resources": [
+            {
+              "type": "Microsoft.ContainerRegistry/registries",
+              "apiVersion": "2023-07-01",
+              "name": "[variables('acrTest')]",
+              "location": "[parameters('region')]",
+              "sku": { "name": "Basic" },
+              "properties": { "adminUserEnabled": true }
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "name": "[guid(variables('rgTest'), variables('acrTest'), variables('aksName'))]",
+              "scope": "[format('Microsoft.ContainerRegistry/registries/{0}', variables('acrTest'))]",
+              "dependsOn": [
+                "[resourceId('Microsoft.ContainerRegistry/registries', variables('acrTest'))]"
+              ],
+              "properties": {
+                "roleDefinitionId": "[variables('acrPullRoleId')]",
+                "principalId": "[reference(resourceId(variables('rgAks'), 'Microsoft.ContainerService/managedClusters', variables('aksName')), '2023-08-01', 'Full').properties.identityProfile.kubeletidentity.objectId]",
+                "principalType": "ServicePrincipal"
+              }
+            },
+            {
+              "type": "Microsoft.DBforPostgreSQL/flexibleServers",
+              "apiVersion": "2022-12-01",
+              "name": "[variables('dbTest')]",
+              "location": "[parameters('region')]",
+              "sku": { "name": "Standard_B1ms", "tier": "Burstable" },
+              "properties": {
+                "administratorLogin": "petclinic_admin",
+                "administratorLoginPassword": "[parameters('dbAdminPassword')]",
+                "version": "13",
+                "storage": { "storageSizeGB": 32 }
+              },
+              "resources": [
+                {
+                  "type": "databases",
+                  "apiVersion": "2022-12-01",
+                  "name": "petclinic",
+                  "dependsOn": [ "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', variables('dbTest'))]" ],
+                  "properties": { "charset": "UTF8", "collation": "en_US.utf8" }
+                },
+                {
+                  "type": "firewallRules",
+                  "apiVersion": "2022-12-01",
+                  "name": "AllowAzureServices",
+                  "dependsOn": [ "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', variables('dbTest'))]" ],
+                  "properties": { "startIpAddress": "0.0.0.0", "endIpAddress": "0.0.0.0" }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2021-04-01",
+      "name": "Deploy-PetClinic-Prod",
+      "resourceGroup": "[variables('rgProd')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/resourceGroups', variables('rgProd'))]",
+        "Deploy-AKS"
+      ],
+      "properties": {
+        "mode": "Incremental",
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "resources": [
+            {
+              "type": "Microsoft.ContainerRegistry/registries",
+              "apiVersion": "2023-07-01",
+              "name": "[variables('acrProd')]",
+              "location": "[parameters('region')]",
+              "sku": { "name": "Basic" },
+              "properties": { "adminUserEnabled": true }
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "name": "[guid(variables('rgProd'), variables('acrProd'), variables('aksName'))]",
+              "scope": "[format('Microsoft.ContainerRegistry/registries/{0}', variables('acrProd'))]",
+              "dependsOn": [
+                "[resourceId('Microsoft.ContainerRegistry/registries', variables('acrProd'))]"
+              ],
+              "properties": {
+                "roleDefinitionId": "[variables('acrPullRoleId')]",
+                "principalId": "[reference(resourceId(variables('rgAks'), 'Microsoft.ContainerService/managedClusters', variables('aksName')), '2023-08-01', 'Full').properties.identityProfile.kubeletidentity.objectId]",
+                "principalType": "ServicePrincipal"
+              }
+            },
+            {
+              "type": "Microsoft.DBforPostgreSQL/flexibleServers",
+              "apiVersion": "2022-12-01",
+              "name": "[variables('dbProd')]",
+              "location": "[parameters('region')]",
+              "sku": { "name": "Standard_B1ms", "tier": "Burstable" },
+              "properties": {
+                "administratorLogin": "petclinic_admin",
+                "administratorLoginPassword": "[parameters('dbAdminPassword')]",
+                "version": "13",
+                "storage": { "storageSizeGB": 32 }
+              },
+              "resources": [
+                {
+                  "type": "databases",
+                  "apiVersion": "2022-12-01",
+                  "name": "petclinic",
+                  "dependsOn": [ "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', variables('dbProd'))]" ],
+                  "properties": { "charset": "UTF8", "collation": "en_US.utf8" }
+                },
+                {
+                  "type": "firewallRules",
+                  "apiVersion": "2022-12-01",
+                  "name": "AllowAzureServices",
+                  "dependsOn": [ "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', variables('dbProd'))]" ],
+                  "properties": { "startIpAddress": "0.0.0.0", "endIpAddress": "0.0.0.0" }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "aksClusterName": {
+      "type": "string",
+      "value": "[variables('aksName')]"
+    },
+    "acrDevName": {
+      "type": "string",
+      "value": "[variables('acrDev')]"
+    }
+  }
+}
