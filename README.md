@@ -66,7 +66,7 @@ az deployment sub create \
 
 > **Note:** The deployment runs at the **subscription** scope and creates all four resource groups automatically. It may take 10–15 minutes to complete.
 
-### 1.3 Retrieve the Unique Suffix
+### 1.3 Retrieve the Unique Suffix --THIS SHOULD BE FIX DOES NOT RETURN THE SUFFIX
 
 The ARM template generates a 6-character unique suffix to make globally unique resource names. Retrieve it after deployment:
 
