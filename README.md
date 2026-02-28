@@ -296,6 +296,8 @@ kubectl get pods -n prod
 
 # Get the service external IP
 kubectl get svc -n dev
+kubectl get svc -n testing
+kubectl get svc -n prod
 ```
 
 ---
