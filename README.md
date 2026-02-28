@@ -1,250 +1,265 @@
-# Lab: End-to-End Azure DevOps Pipeline for Spring Petclinic
+# Petclinic — Azure AKS Deployment Guide
 
-## Objective
+This guide walks you through deploying the Spring Petclinic application to Azure Kubernetes Service (AKS) using a multi-environment CI/CD pipeline built on Azure DevOps.
 
-In this lab, you will manually provision infrastructure, secure the connection between Azure DevOps and Azure, import repositories, and build a "Build Once, Deploy Many" pipeline.
+---
 
-> **Note on Scripts:** The helper scripts (`petclinic-infra.sh`, `petclinic-service-connection.sh`) and the ARM template (`petclinic-infra.json`) are located in the `spring-petclinic` repository. You will not execute these scripts as whole files. Instead, you will execute the specific commands inside them individually to understand each step of the provisioning process.
+## Architecture Overview
+
+The setup provisions three isolated environments (Dev, Testing, Prod), each with its own Azure Container Registry (ACR) and PostgreSQL Flexible Server, all sharing a single AKS cluster.
+
+```
+Azure Subscription
+├── rg-petclinic-aks        → AKS Cluster (aks-petclinic)
+├── rg-petclinic-dev        → ACR (dev) + PostgreSQL (dev)
+├── rg-petclinic-testing    → ACR (test) + PostgreSQL (test)
+└── rg-petclinic-prod       → ACR (prod) + PostgreSQL (prod)
+```
+
+**Pipeline flow:**
+
+```
+[Code Push] → Build & Test → Deploy Dev → [Manual Approval]
+           → Deploy Testing → [Manual Approval] → Deploy Prod
+```
+
+Images are built once in Dev and **promoted** (pull → retag → push) to Testing and Prod ACRs rather than rebuilt, ensuring environment parity.
 
 ---
 
 ## Prerequisites
 
-- **Azure Subscription:** Owner or User Access Administrator role
-- **Azure DevOps Organization:** With a Project created (e.g., `PetClinic`)
-- **Azure CLI:** Open the Azure Cloud Shell (Bash) in the Azure Portal
+Before you begin, ensure you have the following installed and configured:
+
+- **Azure CLI** — [Install guide](https://docs.microsoft.com/en-us/cli/azure/install-azure-cli)
+- **kubectl** — [Install guide](https://kubernetes.io/docs/tasks/tools/)
+- An active **Azure Subscription** with permissions to create resource groups, AKS clusters, ACRs, and PostgreSQL servers at the subscription level
+- An **Azure DevOps** organization and project
+- The application repository containing a `Dockerfile`, `pom.xml`, and `k8s/manifest.yaml`
 
 ---
 
-## Step 1: Import Repositories
+## Step 1 — Provision Azure Infrastructure
 
-We will start by importing the source code and templates into your Azure DevOps project.
+### 1.1 Generate an SSH Key Pair
 
-### 1. Import the Application
+The AKS nodes require an SSH public key for Linux node access.
 
-1. Navigate to **Azure DevOps > Repos**
-2. Click the repo dropdown (top center) > **Import repository**
-3. Enter the following details:
-   - **Clone URL:** `https://github.com/denisdbell/spring-petclinic`
-   - **Name:** `spring-petclinic`
-4. Click **Import**
+```bash
+ssh-keygen -t rsa -b 4096 -f ~/.ssh/aks_rsa -N ""
+```
 
-### 2. Import the Templates
+### 1.2 Deploy the ARM Template
 
-1. Click the repo dropdown > **Import repository**
-2. Enter the following details:
-   - **Clone URL:** `https://github.com/denisdbell/petclinic-pipeline-template`
-   - **Name:** `petclinic-pipeline-template`
-3. Click **Import**
+Run the following command to deploy all infrastructure in one shot. Replace the password with a strong value of your own.
+
+```bash
+az deployment sub create \
+  --name petclinic-aks-deploy \
+  --location westus3 \
+  --template-file aks-infra.json \
+  --parameters sshRSAPublicKey="$(cat ~/.ssh/aks_rsa.pub)" \
+  --parameters dbAdminPassword="<YOUR-STRONG-PASSWORD>" \
+  --parameters region="westus3"
+```
+
+> **Note:** The deployment runs at the **subscription** scope and creates all four resource groups automatically. It may take 10–15 minutes to complete.
+
+### 1.3 Retrieve the Unique Suffix --THIS SHOULD BE FIX DOES NOT RETURN THE SUFFIX
+
+The ARM template generates a 6-character unique suffix to make globally unique resource names. Retrieve it after deployment:
+
+```bash
+az deployment sub show \
+  --name petclinic-aks-deploy \
+  --query "properties.outputs" \
+  --output json
+```
+
+Note the value of `acrDevName` — the last 6 characters are your unique suffix (e.g., `acrpetclinicdev**a1b2c3**`). You will need this in Step 3.
+
+### 1.4 Resources Created
+
+| Resource | Name Pattern | Environment |
+|---|---|---|
+| AKS Cluster | `aks-petclinic` | Shared |
+| Container Registry | `acrpetclinicdev<suffix>` | Dev |
+| Container Registry | `acrpetclinictest<suffix>` | Testing |
+| Container Registry | `acrpetclinicprod<suffix>` | Prod |
+| PostgreSQL Server | `db-petclinic-dev-<suffix>` | Dev |
+| PostgreSQL Server | `db-petclinic-testing-<suffix>` | Testing |
+| PostgreSQL Server | `db-petclinic-prod-<suffix>` | Prod |
+
+All PostgreSQL servers use version 13, the `Standard_B1ms` (Burstable) SKU, and have a `petclinic` database pre-created. The AKS kubelet identity is automatically granted `AcrPull` on each registry.
 
 ---
 
-## Step 2: Create Azure Infrastructure
+## Step 2 — Configure Azure DevOps
 
-**Reference File:** `spring-petclinic/petclinic-infra.sh`
+### 2.1 Create Service Connections
 
-We will manually run the commands to provision the dev, testing, and prod environments.
+In your Azure DevOps project, go to **Project Settings → Service connections** and create the following:
 
-**Action:** Copy and paste the following commands into your Azure Cloud Shell one by one.
+**Kubernetes Service Connection**
 
-### 1. Set Up Variables
+| Field | Value |
+|---|---|
+| Name | `aks-service-connection` |
+| Type | Azure Resource Manager (AKS) |
+| Cluster | `aks-petclinic` in `rg-petclinic-aks` |
+| Authentication | Select **"Use cluster admin credentials"** |
 
-First, ensure you have the ARM template file available in Cloud Shell. You can upload `petclinic-infra.json` from the repo or create it. Then, set your location.
+> **Important:** When creating this connection, expand the authentication options and check **"Use cluster admin credentials"**. Without this, the pipeline agent will use a restricted service account token that lacks the permissions needed to manage namespaces and deploy resources.
 
-```bash
-# Upload or ensure petclinic-infra.json is in your current directory
-# Set the target region (e.g., westus3 or eastus2 to avoid quotas)
-LOC="westus3"
-```
+**Docker Registry / ACR Service Connections** — create one for each environment:
 
-### 2. Provision Development (Dev)
+| Name | ACR |
+|---|---|
+| `dev-acr-service-connection` | `acrpetclinicdev<suffix>` |
+| `test-acr-service-connection` | `acrpetclinictest<suffix>` |
+| `prod-acr-service-connection` | `acrpetclinicprod<suffix>` |
 
-Create the resource group and deploy the App Service + Database.
+For each ACR connection, choose **Docker Registry** → **Azure Container Registry** and select the corresponding registry.
 
-```bash
-# Create Resource Group
-az group create --name rg-dev --location $LOC
 
-# Deploy Resources
-az deployment group create \
-  --name DeployDev \
-  --resource-group rg-dev \
-  --template-file petclinic-infra.json \
-  --parameters environmentName=dev
-```
+### 2.2 Create Pipeline Environments
 
-### 3. Provision Testing (Test)
+Go to **Pipelines → Environments** and create three environments. These are used for deployment tracking and manual approval gates:
 
-Repeat the process for the testing environment.
+- `dev`
+- `testing`
+- `prod`
 
-```bash
-# Create Resource Group
-az group create --name rg-testing --location $LOC
+For `testing` and `prod`, you may optionally add approval checks under the environment's **Approvals and checks** settings (though the pipeline also uses `ManualValidation` tasks as a fallback).
 
-# Deploy Resources
-az deployment group create \
-  --name DeployTest \
-  --resource-group rg-testing \
-  --template-file petclinic-infra.json \
-  --parameters environmentName=testing
-```
+### 2.3 Import the Pipeline Template Repository
 
-### 4. Provision Production (Prod)
+The pipeline references an external template repository. Import or fork your template repo into an Azure DevOps project named `Petclinic` under the repository name `petclinic-pipeline-template`, on a branch named **`master-aks`**. Place `build.yaml`, `deploy.yaml`, and `promote-acr.yaml` in the root of that repository.
 
-Finally, create the production environment.
+> **Important:** The `ref` field in `azure-pipeline.yaml` must point to `master-aks`:
+> ```yaml
+> resources:
+>   repositories:
+>     - repository: templates
+>       type: git
+>       name: Petclinic/petclinic-pipeline-template
+>       ref: master-aks
+> ```
 
-```bash
-# Create Resource Group
-az group create --name rg-prod --location $LOC
+### 2.4 Create a Secret Pipeline Variable
 
-# Deploy Resources
-az deployment group create \
-  --name DeployProd \
-  --resource-group rg-prod \
-  --template-file petclinic-infra.json \
-  --parameters environmentName=prod
-```
+Rather than storing the database password in plain text in the YAML, set it as a secret variable:
 
-**Checkpoint:** Verify in the Azure Portal that `rg-dev`, `rg-testing`, and `rg-prod` exist and contain resources.
+1. Open your pipeline and click **Edit → Variables**
+2. Add a variable named `dbAdminPassword` with the same password used during ARM deployment
+3. Check the **Keep this value secret** option
+
+Then update `azure-pipeline.yaml` to reference `$(dbAdminPassword)` and remove the hardcoded value.
 
 ---
 
-## Step 3: Configure Service Connection & Roles
+## Step 3 — Configure the Pipeline YAML
 
-**Reference File:** `spring-petclinic/petclinic-service-connection.sh`
-
-You need to authorize Azure DevOps to deploy to your subscription and assign the correct RBAC roles.
-
-### 1. Create the Connection
-
-1. Go to **Azure DevOps > Project Settings > Service connections**
-2. Click **New service connection > Azure Resource Manager > Service principal (automatic)**
-3. Select your **Subscription**
-4. **Service Connection Name:** `Azure-Subscription-Conn`
-5. **Grant access permission to all pipelines:** Checked
-6. Click **Save**
-
-### 2. Assign Roles (Command Line)
-
-The Service Connection created a "Service Principal" (Identity) in Azure. You must now grant that identity permission to manage resources.
-
-**Get the Service Principal ID:**
-
-1. Go to the Service Connection you just created in Azure DevOps
-2. Click **Manage Service Principal** (link opens Azure Portal)
-3. Copy the **Application (client) ID**
-
-**Run these commands in Cloud Shell:**
-
-```bash
-# REPLACE with the Client ID you just copied
-SP_ID="<PASTE_YOUR_CLIENT_ID_HERE>"
-
-# Get your Subscription ID automatically
-SUBSCRIPTION_ID=$(az account show --query id -o tsv)
-
-echo "Using Service Principal: $SP_ID"
-
-# 1. Assign CONTRIBUTOR Role
-# Required to create/update App Services and Databases
-az role assignment create \
-  --assignee $SP_ID \
-  --role "Contributor" \
-  --scope "/subscriptions/$SUBSCRIPTION_ID"
-
-# 2. Assign USER ACCESS ADMINISTRATOR Role
-# Required if the pipeline needs to assign permissions to other resources later
-az role assignment create \
-  --assignee $SP_ID \
-  --role "User Access Administrator" \
-  --scope "/subscriptions/$SUBSCRIPTION_ID"
-```
-
----
-
-## Step 4: Understand the Pipeline Templates
-
-Before running the pipeline, let's understand how the repositories work together.
-
-### 1. The Template Repo (petclinic-pipeline-template)
-
-This repository contains the "Logic" that is shared across environments.
-
-- **build.yaml:** Compiles the Java code using Maven and publishes the Artifact (drop)
-- **deploy.yaml:** Downloads the Artifact and deploys it to Azure App Service. It accepts parameters like `webAppName` and `environmentName`, making it reusable for Dev, Test, and Prod
-
-### 2. The Application Pipeline (spring-petclinic/azure-pipeline.yaml)
-
-This is the "Orchestrator". It triggers on code changes and calls the templates.
-
-- **Resources Section:** It links to the `petclinic-pipeline-template` repo so it can use the YAML files inside it
-- **Stages:** It defines the workflow: Build → DeployDev → ApproveTesting → DeployTest, etc.
-
----
-
-## Step 5: Configure and Run the Pipeline
-
-### 1. Update azure-pipeline.yaml
-
-You must update the pipeline to use your specific resource names.
-
-1. In Azure DevOps, go to **Repos > spring-petclinic**
-2. Edit `azure-pipeline.yaml`
-3. **Update the Repository Reference:**
+Open `azure-pipeline.yaml` and update these two values:
 
 ```yaml
-resources:
-  repositories:
-    - repository: templates
-      type: git
-      name: <YOUR_PROJECT_NAME>/petclinic-pipeline-template # e.g. PetClinic/petclinic-pipeline-template
-      ref: main
+# UPDATE: Replace 'a1b2c3' with your actual 6-character suffix from Step 1.3
+uniqueSuffix: 'a1b2c3'
+
+# SECURITY: Remove the hardcoded password and use the secret variable instead
+dbAdminPassword: $(dbAdminPassword)
 ```
 
-4. **Update Variables:** Replace the placeholder names with the actual App Service names you created in Step 2 (check Azure Portal)
+All other variable values (ACR login servers, DB URLs) are automatically composed from `uniqueSuffix` and require no further changes.
+
+---
+
+## Step 4 — Set Up the Application Repository
+
+Ensure your application source code repository is on the **`master-aks`** branch and includes:
+
+**`Dockerfile`** — at the repository root, used by the build pipeline.
+
+**`k8s/manifest.yaml`** — a Kubernetes manifest with the following placeholder tokens that the pipeline will substitute at deploy time:
 
 ```yaml
-variables:
-  azureServiceConnection: 'Azure-Subscription-Conn'
-  devAppName: 'app-petclinic-dev-<YOUR_SUFFIX>'
-  testAppName: 'app-petclinic-testing-<YOUR_SUFFIX>'
-  prodAppName: 'app-petclinic-prod-<YOUR_SUFFIX>'
+image: #{IMAGE_URL}#          # replaced with full ACR image path
+env:
+  - name: SPRING_DATASOURCE_URL
+    value: #{DB_URL}#          # replaced with PostgreSQL JDBC URL
+  - name: SPRING_DATASOURCE_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: db-secret        # created automatically by the pipeline
+        key: password
 ```
 
-5. Commit the changes
-
-### 2. Create and Run
-
-1. Go to **Pipelines > New Pipeline**
-2. Select **Azure Repos Git > spring-petclinic**
-3. Select **Existing Azure Pipelines YAML file**
-4. **Path:** `/azure-pipeline.yaml`
-5. Click **Run**
-
-### 3. Grant Permissions
-
-The pipeline will pause almost immediately.
-
-**Why?** It needs permission to use the Service Connection `Azure-Subscription-Conn`.
-
-**Action:** Click the "Permission Needed" message on the run screen, then click **Permit** (twice).
-
-### 4. Manual Approvals
-
-The pipeline is designed to pause between environments.
-
-- When **DeployDev** finishes, the pipeline will pause at **ApproveTesting**
-- Click **Review and Approve** to proceed to the Testing environment
-- Repeat this process for Production
+**`pom.xml`** — Maven build file used by the Maven build task to compile, test, and package the application.
 
 ---
 
-## Step 6: Validation
+## Step 5 — Run the Pipeline
 
-Once the pipeline completes **DeployProd:**
+### 5.1 Create the Pipeline
 
-1. Navigate to the Production App Service URL in your browser
-2. Click **"Veterinarians"**
-3. Verify that a list of veterinarians loads, confirming the application is successfully connected to the Database
+In Azure DevOps, go to **Pipelines → New Pipeline**, connect to your application repository, select the **`master-aks`** branch, and select **Existing Azure Pipelines YAML file**, pointing to `azure-pipeline.yaml`.
+
+### 5.2 Pipeline Stages
+
+When triggered by a push to `main`, the pipeline runs through these stages:
+
+| Stage | Description |
+|---|---|
+| **Build** | Runs Maven build & tests, then pushes the Docker image to the Dev ACR with the `$(Build.BuildId)` tag |
+| **Deploy to Dev** | Applies the Kubernetes manifest to the `dev` namespace on AKS using the Dev ACR image |
+| **Manual Approval (Testing)** | Pauses for up to 24 hours awaiting human approval |
+| **Deploy to Testing** | Promotes the image from Dev ACR → Test ACR and deploys to the `testing` namespace |
+| **Manual Approval (Prod)** | Pauses for up to 24 hours awaiting human approval |
+| **Deploy to Prod** | Promotes the image from Test ACR → Prod ACR and deploys to the `prod` namespace |
+
+### 5.3 Approving Promotions
+
+When a `ManualValidation` task fires, an approver will receive a notification in Azure DevOps. Navigate to the pipeline run and click **Review → Approve** to continue, or **Reject** to stop the pipeline.
 
 ---
+
+## Verifying the Deployment
+
+After a successful deploy, retrieve the AKS credentials and inspect the running pods:
+
+```bash
+# Get credentials for the AKS cluster
+az aks get-credentials \
+  --resource-group rg-petclinic-aks \
+  --name aks-petclinic
+
+# Check pods in each namespace
+kubectl get pods -n dev
+kubectl get pods -n testing
+kubectl get pods -n prod
+
+# Get the service external IP
+kubectl get svc -n dev
+```
+
+---
+
+## Security Notes
+
+- The `dbAdminPassword` in `aks-infra.sh` and the YAML files is a **placeholder**. Always replace it with a strong, unique password before deploying to any environment.
+- Store secrets as **secret pipeline variables** in Azure DevOps, not in YAML files committed to source control.
+- The PostgreSQL firewall rule `AllowAzureServices` (IP `0.0.0.0/0.0.0.0`) permits connections from Azure services only. For production hardening, consider using VNet integration and private DNS zones instead.
+- The `db-secret` Kubernetes secret is created by the pipeline on every deployment run using `KubernetesManifest@1 createSecret`.
+
+---
+
+## File Reference
+
+| File | Purpose |
+|---|---|
+| `aks-infra.json` | ARM template — provisions all Azure infrastructure at subscription scope |
+| `aks-infra.sh` | Shell script to generate SSH keys and trigger the ARM deployment |
+| `azure-pipeline.yaml` | Main pipeline — defines all stages, variables, and stage dependencies |
+| `build.yaml` | Reusable pipeline template — Maven build & test, Docker build & push |
+| `deploy.yaml` | Reusable pipeline template — optional image promotion, secret creation, and AKS deploy |
+| `promote-acr.yaml` | Reusable pipeline template — pulls an image from one ACR, retags it, and pushes to another |
