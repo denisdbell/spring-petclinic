@@ -62,7 +62,7 @@ Copy the full output — you will paste it into the portal form in the next step
 
 Click the button below to open the ARM template directly in the Azure Portal:
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://raw.githubusercontent.com/denisdbell/spring-petclinic/refs/heads/master-aks/aks-infra.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fdenisdbell%2Fspring-petclinic%2Frefs%2Fheads%2Fmaster-aks%2Faks-infra.json)
 
 > **Note:** If the link above does not match your repository location, you can deploy manually via the portal:
 > 1. Go to the [Azure Portal](https://portal.azure.com)
