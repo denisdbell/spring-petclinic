@@ -41,17 +41,73 @@ Before you begin, ensure you have the following installed and configured:
 
 ## Step 1 — Provision Azure Infrastructure
 
-### 1.1 Generate an SSH Key Pair
+The ARM template provisions all infrastructure in a single deployment: one AKS cluster, three ACRs, and three PostgreSQL servers across four resource groups. Choose either the Portal method (recommended, no tools required) or the CLI method.
 
-The AKS nodes require an SSH public key for Linux node access.
+---
+
+### Option A — Deploy via Azure Portal (Recommended)
+
+#### 1.1 Generate an SSH Key Pair
+
+The AKS nodes require an SSH public key. Run this once in your terminal to generate one:
+
+```bash
+ssh-keygen -t rsa -b 4096 -f ~/.ssh/aks_rsa -N ""
+cat ~/.ssh/aks_rsa.pub
+```
+
+Copy the full output — you will paste it into the portal form in the next step.
+
+#### 1.2 Launch the Deployment
+
+Click the button below to open the ARM template directly in the Azure Portal:
+
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FPetclinic%2Fpetclinic-pipeline-template%2Fmaster-aks%2Faks-infra.json)
+
+> **Note:** If the link above does not match your repository location, you can deploy manually via the portal:
+> 1. Go to the [Azure Portal](https://portal.azure.com)
+> 2. Search for **"Deploy a custom template"** in the top search bar and select it
+> 3. Click **"Build your own template in the editor"**
+> 4. Click **"Load file"** and upload `aks-infra.json`
+> 5. Click **Save**
+
+#### 1.3 Fill in the Deployment Form
+
+Once the template loads, fill in the following fields:
+
+| Field | Value |
+|---|---|
+| **Subscription** | Select your Azure subscription |
+| **Region** | `West US 3` (or your preferred region) |
+| **Db Admin Password** | A strong password (min. 8 chars, mix of upper, lower, numbers, symbols) |
+| **Ssh RSA Public Key** | Paste the full output of `cat ~/.ssh/aks_rsa.pub` from Step 1.1 |
+
+Leave all other fields at their defaults, then click **Review + create → Create**.
+
+> **Note:** The deployment runs at the **subscription** scope, not a resource group — this is expected. It creates all four resource groups automatically. It may take 10–15 minutes to complete.
+
+#### 1.4 Retrieve the Unique Suffix
+
+Once the deployment completes:
+
+1. In the Azure Portal, go to **Subscriptions → your subscription → Deployments**
+2. Find the deployment named **`petclinic-aks-deploy`** and click it
+3. Click the **Outputs** tab on the left panel
+4. Note the value of **`acrDevName`** — the last 6 characters are your unique suffix (e.g., for `acrpetclinicdevoyyzir` the suffix is `oyyzir`)
+
+You will need this suffix in Step 3.
+
+---
+
+### Option B — Deploy via Azure CLI
+
+#### 1.1 Generate an SSH Key Pair
 
 ```bash
 ssh-keygen -t rsa -b 4096 -f ~/.ssh/aks_rsa -N ""
 ```
 
-### 1.2 Deploy the ARM Template
-
-Run the following command to deploy all infrastructure in one shot. Replace the password with a strong value of your own.
+#### 1.2 Deploy the ARM Template
 
 ```bash
 az deployment sub create \
@@ -65,20 +121,20 @@ az deployment sub create \
 
 > **Note:** The deployment runs at the **subscription** scope and creates all four resource groups automatically. It may take 10–15 minutes to complete.
 
-### 1.3 Retrieve the Unique Suffix --THIS SHOULD BE FIX DOES NOT RETURN THE SUFFIX
-
-The ARM template generates a 6-character unique suffix to make globally unique resource names. Retrieve it after deployment:
+#### 1.3 Retrieve the Unique Suffix
 
 ```bash
 az deployment sub show \
   --name petclinic-aks-deploy \
-  --query "properties.outputs" \
-  --output json
+  --query "properties.outputs.acrDevName.value" \
+  --output tsv
 ```
 
-Note the value of `acrDevName` — the last 6 characters are your unique suffix (e.g., `acrpetclinicdev**a1b2c3**`). You will need this in Step 3.
+The output is the full ACR name (e.g., `acrpetclinicdevoyyzir`). The last 6 characters are your unique suffix. You will need this in Step 3.
 
-### 1.4 Resources Created
+---
+
+### 1.5 Resources Created
 
 | Resource | Name Pattern | Environment |
 |---|---|---|
